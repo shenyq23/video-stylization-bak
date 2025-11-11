@@ -1,6 +1,7 @@
 import os
 import sys
 import torch
+import time
 import cv2
 import numpy as np
 from PIL import Image
@@ -91,9 +92,13 @@ def main(args):
         forward_flows = flows[0]
         forward_occlusions = occlusions[0]
         output_frames = [stylized_frames[0]]
+
+        frame_process_timestamps = [time.time()]
         for i in range(1, len(frames)):
             if (not args.discard_key_frames) and i in key_frame_set:
                 output_frames.append(stylized_frames[i])
+                frame_process_timestamps.append(frame_process_timestamps[-1])
+                print(f"frame #{i} is a key frame, skipped warping.")
                 continue
 
             idx = ref_frame_idx_list[i]
@@ -103,6 +108,13 @@ def main(args):
             frame_tensor = numpy2tensor(np.array(stylized_frames[idx]), args.device)
             warped_frame = flow_model.flow_warp(frame_tensor, flow).squeeze_() * (1 - occlusion.squeeze_())
             output_frames.append(((warped_frame.detach().cpu().numpy().transpose(1, 2, 0) + 1.0) * 127.5).astype(np.uint8))
+
+            frame_process_timestamps.append(time.time())
+            print(f"processed frame #{i} using flow from frame #{idx}. time elapsed: {1000 * (frame_process_timestamps[-1] - frame_process_timestamps[-2]):.4f} miliseconds.")
+
+        frame_process_timestamps = np.array(frame_process_timestamps)
+        time_diffs = frame_process_timestamps[1:] - frame_process_timestamps[:-1]
+        print(f"average time per frame: {1000 * np.mean(time_diffs[time_diffs != 0]):.4f} miliseconds.")
 
     # pixel video
     final_output_frames = []
