@@ -52,8 +52,8 @@ class GMFlowWrapper(OpticalFlowWrapper):
         with torch.no_grad():
             images = torch.stack([torch.from_numpy(frame).permute(2, 0, 1).float() for frame in frames], dim=0).to(self.device)
             results_dict = self.model(
-                images,
                 images[ref_frame_idx_list],
+                images,
                 attn_splits_list=[2], 
                 corr_radius_list=[-1],
                 prop_radius_list=[-1],
@@ -67,11 +67,11 @@ class GMFlowWrapper(OpticalFlowWrapper):
             # params of flow_warp
             # 1. source image
             # 2. the flow from target to source
-            warped_images = self.flow_warp(images, backward_flows)
-            backward_occlusions = torch.clamp(backward_occlusions + (abs(images[ref_frame_idx_list] - warped_images).mean(dim=1) > 255 * 0.25).float(), 0, 1)
+            warped_images = self.flow_warp(images[ref_frame_idx_list], backward_flows)
+            backward_occlusions = torch.clamp(backward_occlusions + (abs(images - warped_images).mean(dim=1) > 255 * 0.25).float(), 0, 1)
 
-            warped_images = self.flow_warp(images[ref_frame_idx_list], forward_flows)
-            forward_occlusions = torch.clamp(forward_occlusions + (abs(images - warped_images).mean(dim=1) > 255 * 0.25).float(), 0, 1)
+            warped_images = self.flow_warp(images, forward_flows)
+            forward_occlusions = torch.clamp(forward_occlusions + (abs(images[ref_frame_idx_list] - warped_images).mean(dim=1) > 255 * 0.25).float(), 0, 1)
 
             gc.collect()
             torch.cuda.empty_cache()

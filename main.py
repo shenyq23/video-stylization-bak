@@ -61,7 +61,7 @@ def get_flow_frames(flows, vector_stride=20):
 
         for y in range(vector_stride // 2, H, vector_stride):
             for x in range(vector_stride // 2, W, vector_stride):
-                dx, dy = -flow_np[y, x, :]
+                dx, dy = flow_np[y, x, :]
                 start_point = (x, y)
                 end_x = int(np.clip(round(x + dx), 0, W - 1))
                 end_y = int(np.clip(round(y + dy), 0, H - 1))
@@ -90,7 +90,8 @@ def main(args):
 
         key_frame_set = set(ref_frame_idx_list)
         forward_flows = flows[0]
-        forward_occlusions = occlusions[0]
+        backward_flows = flows[1]
+        backward_occlusions = occlusions[1]
         output_frames = [stylized_frames[0]]
 
         frame_process_timestamps = [time.time()]
@@ -102,8 +103,8 @@ def main(args):
                 continue
 
             idx = ref_frame_idx_list[i]
-            flow = forward_flows[i : i + 1]
-            occlusion = forward_occlusions[i : i + 1]
+            flow = backward_flows[i : i + 1]
+            occlusion = backward_occlusions[i : i + 1]
 
             frame_tensor = numpy2tensor(np.array(stylized_frames[idx]), args.device)
             warped_frame = flow_model.flow_warp(frame_tensor, flow).squeeze_() * (1 - occlusion.squeeze_())
@@ -134,9 +135,9 @@ def main(args):
     final_output_frames = []
     flow_output_path = os.path.join("./output", args.video_name, f"{args.flow_model}_flows_batch_{args.batch_size}.mp4")
     flow_frames = get_flow_frames(forward_flows)
-    forward_occlusions_np = forward_occlusions.squeeze().cpu().numpy() * 255.0
+    backward_occlusions_np = backward_occlusions.squeeze().cpu().numpy() * 255.0
     for i in range(len(flow_frames)):
-        concat_frame = np.concatenate((flow_frames[i], forward_occlusions_np[i]), axis=1)
+        concat_frame = np.concatenate((flow_frames[i], backward_occlusions_np[i]), axis=1)
         final_output_frames.append(concat_frame.astype(np.uint8))
     with imageio.get_writer(flow_output_path, fps=args.frame_rate, codec="libx264") as writer:
         for frame in final_output_frames:
@@ -146,8 +147,8 @@ def main(args):
 
     # mask ratio plot
     occlusion_ratios = []
-    for i in range(forward_occlusions.shape[0]):
-        occlusion = forward_occlusions[i : i + 1]
+    for i in range(backward_occlusions.shape[0]):
+        occlusion = backward_occlusions[i : i + 1]
         occlusion_np = occlusion.squeeze().cpu().numpy()
         occlusion_ratio = np.sum(occlusion_np) / (occlusion_np.shape[0] * occlusion_np.shape[1])
         occlusion_ratios.append(occlusion_ratio)
