@@ -1,13 +1,13 @@
 import os
-import sys
 import torch
 import time
 import cv2
 import numpy as np
-from PIL import Image
 from matplotlib import pyplot as plt
 import imageio
 import argparse
+
+from optical_wrapper import universal_flow_warp
 
 def resize_image(input_image, resolution):
     H, W, C = input_image.shape
@@ -26,10 +26,13 @@ def numpy2tensor(frame, device):
     x = torch.stack([x], dim=0)
     return x.permute(0, 3, 1, 2)
 
-def load_video_frames(video_path, resolution=512, log_step=10, max_frames=None, start_frame_idx=0):
+def load_video_frames(video_path, max_frames=None, start_frame_idx=0):
     frames = []
     video_capture = cv2.VideoCapture(video_path)
     frame_cnt = 0
+    width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = video_capture.get(cv2.CAP_PROP_FPS)
     while frame_cnt < start_frame_idx:
         success = video_capture.grab()
         if not success:
@@ -42,14 +45,11 @@ def load_video_frames(video_path, resolution=512, log_step=10, max_frames=None, 
         if max_frames is not None and frame_cnt >= max_frames + start_frame_idx:
             break
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame = resize_image(frame, resolution)
         frames += [frame]
-
-        if frame_cnt % log_step == 0:
-            print(f"successfully read frame #{frame_cnt} from {video_path}")
         frame_cnt += 1
 
-    return frames
+    print(f"successfully grab {len(frames)} frames with {width}x{height} @ {fps}fps")
+    return width, height, fps, frames
 
 def get_flow_frames(flows, vector_stride=20):
     H, W = flows[0].shape[1:]
@@ -75,18 +75,25 @@ def main(args):
     with torch.no_grad():
         video_path = os.path.join("./input", args.video_name, "input.mp4")
         stylized_video_path = os.path.join("./input", args.video_name, "stylized.mp4")
-        frames = load_video_frames(video_path=video_path, resolution=args.resolution, log_step=10, max_frames=args.max_frames, start_frame_idx=args.start_frame_idx)
-        stylized_frames = load_video_frames(video_path=stylized_video_path, resolution=args.resolution, log_step=10, max_frames=args.max_frames, start_frame_idx=args.start_frame_idx)
+        width, height, fps, frames = load_video_frames(video_path=video_path, max_frames=args.max_frames, start_frame_idx=args.start_frame_idx)
+        stylized_width, stylized_height, stylized_fps, stylized_frames = load_video_frames(video_path=stylized_video_path, max_frames=args.max_frames, start_frame_idx=args.start_frame_idx)
         assert len(frames) == len(stylized_frames), f"number of frames mismatch: {len(frames)} vs {len(stylized_frames)}"
+
+        # resize the frames
+        frames = [resize_image(frame, args.resolution) for frame in frames]
+        stylized_frames = [resize_image(frame, args.resolution) for frame in stylized_frames]
 
         if args.flow_model == "gmflow":
             from optical_wrapper import GMFlowWrapper as FlowModelClass
+        elif args.flow_model == "x265":
+            from optical_wrapper import X265MVWrapper as FlowModelClass
         else:
             raise NotImplementedError(f"flow model {args.flow_model} not implemented.")
         
         flow_model = FlowModelClass(args.device)
         ref_frame_idx_list = [0] + [(i - 1) // args.batch_size * args.batch_size for i in range(1, len(frames))]
-        flows, occlusions = flow_model.compute_flow_and_occlusion(frames, ref_frame_idx_list)
+        flows, occlusions = flow_model.compute_flow_and_occlusion(frames, ref_frame_idx_list, size=f"{width}x{height}", frame_rate=fps)
+        exit()
 
         key_frame_set = set(ref_frame_idx_list)
         forward_flows = flows[0]
@@ -107,7 +114,7 @@ def main(args):
             occlusion = backward_occlusions[i : i + 1]
 
             frame_tensor = numpy2tensor(np.array(stylized_frames[idx]), args.device)
-            warped_frame = flow_model.flow_warp(frame_tensor, flow).squeeze_() * (1 - occlusion.squeeze_())
+            warped_frame = universal_flow_warp(frame_tensor, flow).squeeze_() * (1 - occlusion.squeeze_())
             output_frames.append(((warped_frame.detach().cpu().numpy().transpose(1, 2, 0) + 1.0) * 127.5).astype(np.uint8))
 
             frame_process_timestamps.append(time.time())
@@ -163,7 +170,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Optical Flow Video Processing")
     parser.add_argument("--video_name", type=str, help="Name of the video folder in ./input")
-    parser.add_argument("--flow_model", type=str, choices=["gmflow"], help="Optical flow model to use")
+    parser.add_argument("--flow_model", type=str, choices=["gmflow", "x265"], help="Optical flow model to use")
     parser.add_argument("--batch_size", type=int, help="Batch size for processing frames")
     parser.add_argument("--resolution", type=int, default=512, help="Resolution to resize frames")
     parser.add_argument("--start_frame_idx", type=int, default=0, help="Starting frame index to process")
