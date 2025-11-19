@@ -93,7 +93,6 @@ def main(args):
         flow_model = FlowModelClass(args.device)
         ref_frame_idx_list = [0] + [(i - 1) // args.batch_size * args.batch_size for i in range(1, len(frames))]
         flows, occlusions = flow_model.compute_flow_and_occlusion(frames, ref_frame_idx_list, size=f"{width}x{height}", frame_rate=fps)
-        exit()
 
         key_frame_set = set(ref_frame_idx_list)
         forward_flows = flows[0]

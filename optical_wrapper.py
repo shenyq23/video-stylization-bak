@@ -4,6 +4,8 @@ import gc
 import torch
 import tempfile
 import cv2
+import pandas as pd
+import numpy as np
 
 sys.path.append("./deps/gmflow")
 sys.path.append("./deps/RAFT")
@@ -100,64 +102,85 @@ class X265MVWrapper(OpticalFlowWrapper):
         self.encoder = X265EncoderWrapper(encoder_path)
 
     @staticmethod
-    def _parse_section(s):
-        s = s.strip()
-        assert s[0] == "(" and s[-1] == ")"
-        s = [x.strip() for x in s[1:-1].split(",")]
-        assert len(s) == 4
-        return MVInfo(
-            delta_poc=int(s[0]),
-            mvx=int(s[1]),
-            mvy=int(s[2]),
-            weight=int(s[3]),
-        )
+    def _update_flow(flow_log_path, flows_ref, ref_idx):
+        df = pd.read_csv(flow_log_path)
+        for _, row in df.iterrows():
+            if int(row["poc"]) == 0:
+                continue
+            x = int(row["x"])
+            y = int(row["y"])
+            w = int(row["w"])
+            h = int(row["h"])
+            mvx = float(row["mvx"])
+            mvy = float(row["mvy"])
+            delta_poc = int(row["deltapoc"])
+
+            assert w == 4 and h == 4
+            if delta_poc == 0:
+                flows_ref[ref_idx, 0, y : y + h, x : x + w] = 0
+                flows_ref[ref_idx, 1, y : y + h, x : x + w] = 0
+            else:
+                flows_ref[ref_idx, 0, y : y + h, x : x + w] = mvx
+                flows_ref[ref_idx, 1, y : y + h, x : x + w] = mvy
 
     def compute_flow_and_occlusion(self, frames, ref_frame_idx_list, **kwargs):
-        """ kwargs should contain size and frame rate
         """
+        - kwargs should contain preset, size, frame rate
+        - by default, we use encoding log and the granularity should be 4x4
+        """
+        width = int(kwargs["size"].split("x")[0])
+        height = int(kwargs["size"].split("x")[1])
+        forward_flows = np.zeros((len(frames), 2, height, width), dtype=np.float32)
+        backward_flows = np.zeros((len(frames), 2, height, width), dtype=np.float32)
         with tempfile.TemporaryDirectory() as tempdir:
-            print(f"encoding in temporary path: {tempdir}")
-            yuv_file_path = os.path.join(tempdir, "input.yuv")
-            output_file_path = os.path.join(tempdir, "output.h265")
-            log_root = os.path.join(tempdir, "encoding_log")
-            with open(yuv_file_path, "wb") as f:
-                for frame in frames:
-                    f.write(cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420).tobytes())
-            self.encoder.encode(
-                input_path=yuv_file_path,
-                output_path=output_file_path,
-                log_root=log_root,
-                frame_cnt=len(frames),
-                size=kwargs["size"],
-                frame_rate=kwargs["frame_rate"],
-            )
+            log_root = os.path.join(tempdir, "x265_logs")
+            for idx, ref_idx in enumerate(ref_frame_idx_list):
+                target_frame = frames[idx]
+                source_frame = frames[ref_idx]
 
-            width = int(kwargs["size"].split("x")[0])
-            height = int(kwargs["size"].split("x")[1])
-            frame_mv_infos = []
-            for i in range(len(frames)):
-                with open(os.path.join(log_root, f"{i}_encoding.txt"), "r") as f:
-                    lines = f.readlines()
-                    lines = [line.strip() for line in lines]
-                    lines = [line for line in lines if line != ""]
-                    assert len(lines) == width * height / 16
+                # backward motion vector computation
+                yuv_file_path = os.path.join(tempdir, f"{idx}_to_{ref_idx}_input.yuv")
+                log_base_name = f"{idx}_to_{ref_idx}"
+                log_path = os.path.join(log_root, log_base_name + f"-{kwargs.get('preset', 'fast')}-encode-4x4.csv")
+                with open(yuv_file_path, "wb") as f:
+                    f.write(cv2.cvtColor(source_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
+                    f.write(cv2.cvtColor(target_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
+                self.encoder.encode(
+                    input_path=yuv_file_path,
+                    output_path="/dev/null",
+                    log_base_name=log_base_name,
+                    log_root=log_root,
+                    frame_cnt=2,
+                    preset=kwargs.get("preset", "fast"),
+                    size=kwargs.get("size", None),
+                    frame_rate=kwargs.get("frame_rate", None),
+                    lookahead_flag=True,
+                    encoding_flag=True,
+                )
+                X265MVWrapper._update_flow(log_path, backward_flows, idx)
 
-                    mv_infos = []
-                    for line in lines:
-                        section_cnt = line.count("(")
-                        assert section_cnt in [1, 2]
-                        if section_cnt == 2:
-                            sections = [s for s in line.split("),(")]
-                            assert len(sections) == 2
-                            mv_infos.append(CUEntry(
-                                forward_info=X265MVWrapper._parse_section(sections[0] + ")"),
-                                backward_info=X265MVWrapper._parse_section("(" + sections[1]),
-                            ))
-                        else:
-                            mv_infos.append(CUEntry(
-                                forward_info=X265MVWrapper._parse_section(line),
-                                backward_info=None,
-                            ))
-                    frame_mv_infos.append(mv_infos)
+                # forward motion vector computation
+                yuv_file_path = os.path.join(tempdir, f"{ref_idx}_to_{idx}_input.yuv")
+                log_base_name = f"{ref_idx}_to_{idx}"
+                log_path = os.path.join(log_root, log_base_name + f"-{kwargs.get('preset', 'fast')}-encode-4x4.csv")
+                with open(yuv_file_path, "wb") as f:
+                    f.write(cv2.cvtColor(target_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
+                    f.write(cv2.cvtColor(source_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
+                self.encoder.encode(
+                    input_path=yuv_file_path,
+                    output_path="/dev/null",
+                    log_base_name=log_base_name,
+                    log_root=log_root,
+                    frame_cnt=2,
+                    preset=kwargs.get("preset", "fast"),
+                    size=kwargs.get("size", None),
+                    frame_rate=kwargs.get("frame_rate", None),
+                    lookahead_flag=True,
+                    encoding_flag=True,
+                )
+                X265MVWrapper._update_flow(log_path, forward_flows, idx)
 
-            # further processing, ready for flow_warp
+        forward_flows = torch.from_numpy(forward_flows).to(self.device)
+        backward_flows = torch.from_numpy(backward_flows).to(self.device)
+        forward_occlusions, backward_occlusions = forward_backward_consistency_check(forward_flows, backward_flows)
+        return [forward_flows, backward_flows], [forward_occlusions, backward_occlusions]
