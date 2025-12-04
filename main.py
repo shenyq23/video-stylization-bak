@@ -1,11 +1,15 @@
 import os
+
+# disable torch warning
+os.environ["TORCH_CPP_LOG_LEVEL"] = "ERROR"
+
 import torch
-import time
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 import imageio
 import argparse
+import json
 
 from optical_wrapper import universal_flow_warp
 
@@ -19,7 +23,7 @@ def resize_image(input_image, resolution):
     H = int(np.round(H / 64.0)) * 64
     W = int(np.round(W / 64.0)) * 64
     img = cv2.resize(input_image, (W, H), interpolation=cv2.INTER_LANCZOS4 if k > 1 else cv2.INTER_AREA)
-    return img
+    return img, (H, W)
 
 def numpy2tensor(frame, device):
     x = torch.from_numpy(frame.copy()).float().to(device) / 255.0 * 2.0 - 1.
@@ -41,7 +45,7 @@ def load_video_frames(video_path, max_frames=None, start_frame_idx=0):
     while True:
         success, frame = video_capture.read()
         if not success:
-            raise ValueError("failed to read frame")
+            break
         if max_frames is not None and frame_cnt >= max_frames + start_frame_idx:
             break
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -80,19 +84,55 @@ def main(args):
         assert len(frames) == len(stylized_frames), f"number of frames mismatch: {len(frames)} vs {len(stylized_frames)}"
 
         # resize the frames
-        frames = [resize_image(frame, args.resolution) for frame in frames]
-        stylized_frames = [resize_image(frame, args.resolution) for frame in stylized_frames]
+        if args.resolution is not None:
+            frames = [resize_image(frame, args.resolution) for frame in frames]
+            stylized_frames = [resize_image(frame, args.resolution) for frame in stylized_frames]
+            size_tuple = frames[0][1]
+            size = f"{size_tuple[1]}x{size_tuple[0]}"
+            frames = [frame[0] for frame in frames]
+            stylized_frames = [frame[0] for frame in stylized_frames]
+        else:
+            assert width == stylized_width and height == stylized_height, "resolution mismatch between original and stylized videos"
+            size = f"{width}x{height}"
 
         if args.flow_model == "gmflow":
             from optical_wrapper import GMFlowWrapper as FlowModelClass
+            x265_params = {}
         elif args.flow_model == "x265":
             from optical_wrapper import X265MVWrapper as FlowModelClass
+            x265_params = json.loads(args.x265_params.replace("'", '"'))  # @todo: bad implementation
+            if "size" in x265_params:
+                del x265_params["size"]
+            if "frame_rate" in x265_params:
+                del x265_params["frame_rate"]
+        elif args.flow_model == "mix":
+            from optical_wrapper import GMFlowWrapper as OcclusionModelClass
+            from optical_wrapper import X265MVWrapper as FlowModelClass
+            x265_params = json.loads(args.x265_params.replace("'", '"'))  # @todo: bad implementation
+            if "size" in x265_params:
+                del x265_params["size"]
+            if "frame_rate" in x265_params:
+                del x265_params["frame_rate"]
+        elif args.flow_model == "reverse_mix":
+            from optical_wrapper import X265MVWrapper as OcclusionModelClass
+            from optical_wrapper import GMFlowWrapper as FlowModelClass
+            x265_params = json.loads(args.x265_params.replace("'", '"'))  # @todo: bad implementation
+            if "size" in x265_params:
+                del x265_params["size"]
+            if "frame_rate" in x265_params:
+                del x265_params["frame_rate"]
         else:
             raise NotImplementedError(f"flow model {args.flow_model} not implemented.")
         
         flow_model = FlowModelClass(args.device)
         ref_frame_idx_list = [0] + [(i - 1) // args.batch_size * args.batch_size for i in range(1, len(frames))]
-        flows, occlusions = flow_model.compute_flow_and_occlusion(frames, ref_frame_idx_list, size=f"{width}x{height}", frame_rate=fps)
+        flows, occlusions, _ = flow_model.compute_flow_and_occlusion(frames, ref_frame_idx_list, size=size, frame_rate=fps, **x265_params)
+
+        if args.flow_model == "mix" or args.flow_model == "reverse_mix":
+            occlusion_model = OcclusionModelClass(args.device)
+
+            # overwrite occlusions using specialized occlusion model
+            _, occlusions, _ = occlusion_model.compute_flow_and_occlusion(frames, ref_frame_idx_list, size=size, frame_rate=fps, **x265_params)
 
         key_frame_set = set(ref_frame_idx_list)
         forward_flows = flows[0]
@@ -100,11 +140,9 @@ def main(args):
         backward_occlusions = occlusions[1]
         output_frames = [stylized_frames[0]]
 
-        frame_process_timestamps = [time.time()]
         for i in range(1, len(frames)):
             if (not args.discard_key_frames) and i in key_frame_set:
                 output_frames.append(stylized_frames[i])
-                frame_process_timestamps.append(frame_process_timestamps[-1])
                 print(f"frame #{i} is a key frame, skipped warping.")
                 continue
 
@@ -116,16 +154,14 @@ def main(args):
             warped_frame = universal_flow_warp(frame_tensor, flow).squeeze_() * (1 - occlusion.squeeze_())
             output_frames.append(((warped_frame.detach().cpu().numpy().transpose(1, 2, 0) + 1.0) * 127.5).astype(np.uint8))
 
-            frame_process_timestamps.append(time.time())
-            print(f"processed frame #{i} using flow from frame #{idx}. time elapsed: {1000 * (frame_process_timestamps[-1] - frame_process_timestamps[-2]):.4f} miliseconds.")
-
-        frame_process_timestamps = np.array(frame_process_timestamps)
-        time_diffs = frame_process_timestamps[1:] - frame_process_timestamps[:-1]
-        print(f"average time per frame: {1000 * np.mean(time_diffs[time_diffs != 0]):.4f} miliseconds.")
+    model_name = args.flow_model
+    if model_name == "x265":
+        for k, v in x265_params.items():
+            model_name += f"_{k}_{v}"
 
     # pixel video
     final_output_frames = []
-    output_path = os.path.join("./output", args.video_name, f"{args.flow_model}_batch_{args.batch_size}.mp4")
+    output_path = os.path.join("./output", args.video_name, f"{model_name}_batch_{args.batch_size}.mp4")
     for i in range(len(frames)):
         concat_frame = np.concatenate((stylized_frames[i], output_frames[i], frames[i]), axis=1)
         final_output_frames.append(concat_frame)
@@ -139,13 +175,14 @@ def main(args):
 
     # flow & occlusion video
     final_output_frames = []
-    flow_output_path = os.path.join("./output", args.video_name, f"{args.flow_model}_flows_batch_{args.batch_size}.mp4")
-    flow_frames = get_flow_frames(forward_flows)
+    flow_output_path = os.path.join("./output", args.video_name, f"{model_name}_flows_batch_{args.batch_size}.mp4")
+    forward_flow_frames = get_flow_frames(forward_flows)
+    backward_flow_frames = get_flow_frames(backward_flows)
     backward_occlusions_np = backward_occlusions.squeeze().cpu().numpy() * 255.0
-    for i in range(len(flow_frames)):
-        concat_frame = np.concatenate((flow_frames[i], backward_occlusions_np[i]), axis=1)
+    for i in range(len(forward_flow_frames)):
+        concat_frame = np.concatenate((forward_flow_frames[i], backward_flow_frames[i], backward_occlusions_np[i]), axis=1)
         final_output_frames.append(concat_frame.astype(np.uint8))
-    with imageio.get_writer(flow_output_path, fps=args.frame_rate, codec="libx264") as writer:
+    with imageio.get_writer(flow_output_path, fps=2, codec="libx264") as writer:
         for frame in final_output_frames:
             if frame.dtype != np.uint8:
                 frame = (frame * 255).astype(np.uint8)
@@ -163,20 +200,21 @@ def main(args):
     plt.xlabel("Frame Index")
     plt.ylabel("Occlusion Ratio")
     plt.title("Occlusion Ratio over Frames")
-    plot_output_path = os.path.join("./output", args.video_name, f"{args.flow_model}_occlusion_ratio_batch_{args.batch_size}.png")
+    plot_output_path = os.path.join("./output", args.video_name, f"{model_name}_occlusion_ratio_batch_{args.batch_size}.png")
     plt.savefig(plot_output_path)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Optical Flow Video Processing")
     parser.add_argument("--video_name", type=str, help="Name of the video folder in ./input")
-    parser.add_argument("--flow_model", type=str, choices=["gmflow", "x265"], help="Optical flow model to use")
+    parser.add_argument("--flow_model", type=str, choices=["gmflow", "x265", "mix", "reverse_mix"], help="Optical flow model to use")
     parser.add_argument("--batch_size", type=int, help="Batch size for processing frames")
-    parser.add_argument("--resolution", type=int, default=512, help="Resolution to resize frames")
+    parser.add_argument("--resolution", type=int, default=None, help="Resolution to resize frames")
     parser.add_argument("--start_frame_idx", type=int, default=0, help="Starting frame index to process")
     parser.add_argument("--max_frames", type=int, default=40, help="Maximum number of frames to process")
     parser.add_argument("--frame_rate", type=int, default=8, help="Frame rate for output video")
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to run the model on")
     parser.add_argument("--discard_key_frames", type=bool, default=False, help="Whether to keep key frames unchanged")
+    parser.add_argument("--x265_params", type=str, default="", help="Additional x265 params")
 
     args = parser.parse_args()
     main(args)

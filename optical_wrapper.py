@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import gc
 import torch
 import tempfile
@@ -10,7 +11,7 @@ import numpy as np
 sys.path.append("./deps/gmflow")
 sys.path.append("./deps/RAFT")
 
-from x265_wrapper import X265EncoderWrapper, MVInfo, CUEntry
+from x265_wrapper import X265EncoderWrapper
 from gmflow.gmflow import GMFlow
 from gmflow.geometry import flow_warp, forward_backward_consistency_check
 from deps.RAFT.core.raft import RAFT
@@ -57,32 +58,55 @@ class GMFlowWrapper(OpticalFlowWrapper):
         """
         with torch.no_grad():
             images = torch.stack([torch.from_numpy(frame).permute(2, 0, 1).float() for frame in frames], dim=0).to(self.device)
-            results_dict = self.model(
-                images[ref_frame_idx_list],
-                images,
-                attn_splits_list=[2], 
-                corr_radius_list=[-1],
-                prop_radius_list=[-1],
-                pred_bidir_flow=True,
-            )
+            _, _, H, W = images.shape
+            feat_h = H // 8
+            feat_w = W // 8
+            attn_split = 2 if (feat_h % 2 == 0 and feat_w % 2 == 0) else 1
 
-            flow_prediction = results_dict["flow_preds"][-1]  # [2*B, 2, H, W]
-            forward_flows, backward_flows = flow_prediction.chunk(2)  # [B, 2, H, W]
-            forward_occlusions, backward_occlusions = forward_backward_consistency_check(forward_flows, backward_flows)  # [B, H, W]
-            
-            # params of flow_warp
-            # 1. source image
-            # 2. the flow from target to source
-            warped_images = flow_warp(images[ref_frame_idx_list], backward_flows)
-            backward_occlusions = torch.clamp(backward_occlusions + (abs(images - warped_images).mean(dim=1) > 255 * 0.25).float(), 0, 1)
+            forward_flows = torch.zeros((len(frames), 2, H, W), device=self.device, dtype=torch.float32)
+            backward_flows = torch.zeros((len(frames), 2, H, W), device=self.device, dtype=torch.float32)
+            forward_occlusions = torch.zeros((len(frames), H, W), device=self.device, dtype=torch.float32)
+            backward_occlusions = torch.zeros((len(frames), H, W), device=self.device, dtype=torch.float32)
 
-            warped_images = flow_warp(images, forward_flows)
-            forward_occlusions = torch.clamp(forward_occlusions + (abs(images[ref_frame_idx_list] - warped_images).mean(dim=1) > 255 * 0.25).float(), 0, 1)
+            elapsed_times = []
+            for i, ref_idx in enumerate(ref_frame_idx_list):
+                source_frame = images[ref_idx : ref_idx + 1]
+                target_frame = images[i : i + 1]
 
-            gc.collect()
-            torch.cuda.empty_cache()
-            
-            return [forward_flows, backward_flows], [forward_occlusions, backward_occlusions]
+                with torch.amp.autocast("cuda", enabled=True):
+                    start = time.time()
+                    results_dict = self.model(
+                        source_frame,
+                        target_frame,
+                        attn_splits_list=[attn_split],
+                        corr_radius_list=[-1],
+                        prop_radius_list=[-1],
+                        pred_bidir_flow=True,
+                    )
+                    end = time.time()
+                    elapsed_times.append(end - start)
+
+                    flow_prediction = results_dict["flow_preds"][-1]  # [2, 2, H, W]
+                    forward_flow, backward_flow = flow_prediction.chunk(2)
+
+                forward_occlusion, backward_occlusion = forward_backward_consistency_check(forward_flow, backward_flow)
+
+                warped_ref = flow_warp(source_frame, backward_flow)
+                backward_occlusion = torch.clamp(backward_occlusion + (abs(target_frame - warped_ref).mean(dim=1) > 255 * 0.25).float(), 0, 1)
+                warped_tar = flow_warp(target_frame, forward_flow)
+                forward_occlusion = torch.clamp(forward_occlusion + (abs(source_frame - warped_tar).mean(dim=1) > 255 * 0.25).float(), 0, 1)
+
+                forward_flows[i] = forward_flow[0].float()
+                backward_flows[i] = backward_flow[0].float()
+                forward_occlusions[i] = forward_occlusion[0].float()
+                backward_occlusions[i] = backward_occlusion[0].float()
+
+                gc.collect()
+                torch.cuda.empty_cache()
+
+                print(f"Processed frame #{i}/{len(frames)}: {elapsed_times[-1] * 1000:.4f} ms")
+
+            return [forward_flows, backward_flows], [forward_occlusions, backward_occlusions], np.mean(elapsed_times) * 1000
 
 class RAFTFlowWrapper(OpticalFlowWrapper):
     def __init__(self, device):
@@ -102,7 +126,7 @@ class X265MVWrapper(OpticalFlowWrapper):
         self.encoder = X265EncoderWrapper(encoder_path)
 
     @staticmethod
-    def _update_flow(flow_log_path, flows_ref, ref_idx):
+    def _update_flow(flow_log_path, flows_ref, ref_idx, granularity):
         df = pd.read_csv(flow_log_path)
         for _, row in df.iterrows():
             if int(row["poc"]) == 0:
@@ -115,7 +139,7 @@ class X265MVWrapper(OpticalFlowWrapper):
             mvy = float(row["mvy"])
             delta_poc = int(row["deltapoc"])
 
-            assert w == 4 and h == 4
+            assert w == granularity and h == granularity
             if delta_poc == 0:
                 flows_ref[ref_idx, 0, y : y + h, x : x + w] = 0
                 flows_ref[ref_idx, 1, y : y + h, x : x + w] = 0
@@ -125,7 +149,7 @@ class X265MVWrapper(OpticalFlowWrapper):
 
     def compute_flow_and_occlusion(self, frames, ref_frame_idx_list, **kwargs):
         """
-        - kwargs should contain preset, size, frame rate
+        - kwargs should contain all the encoding params and the stage whose log will be used
         - by default, we use encoding log and the granularity should be 4x4
         """
         width = int(kwargs["size"].split("x")[0])
@@ -138,10 +162,19 @@ class X265MVWrapper(OpticalFlowWrapper):
                 target_frame = frames[idx]
                 source_frame = frames[ref_idx]
 
+                # decide log path by stage
+                stage = kwargs["stage"]  # should be lookahead or encode
+                if stage == "lookahead":
+                    granularity = 8
+                elif stage == "encode":
+                    granularity = 4
+                else:
+                    raise ValueError("invalid stage")
+
                 # backward motion vector computation
                 yuv_file_path = os.path.join(tempdir, f"{idx}_to_{ref_idx}_input.yuv")
                 log_base_name = f"{idx}_to_{ref_idx}"
-                log_path = os.path.join(log_root, log_base_name + f"-{kwargs.get('preset', 'fast')}-encode-4x4.csv")
+                log_path = os.path.join(log_root, log_base_name + f"-{kwargs.get('preset', 'fast')}-{stage}-{granularity}x{granularity}.csv")
                 with open(yuv_file_path, "wb") as f:
                     f.write(cv2.cvtColor(source_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
                     f.write(cv2.cvtColor(target_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
@@ -156,13 +189,16 @@ class X265MVWrapper(OpticalFlowWrapper):
                     frame_rate=kwargs.get("frame_rate", None),
                     lookahead_flag=True,
                     encoding_flag=True,
+                    enable_p_intra=kwargs.get("enable_p_intra", False),
+                    ctu=kwargs.get("ctu", 16),
+                    crf=kwargs.get("crf", 23),
                 )
-                X265MVWrapper._update_flow(log_path, backward_flows, idx)
+                X265MVWrapper._update_flow(log_path, backward_flows, idx, granularity)
 
                 # forward motion vector computation
                 yuv_file_path = os.path.join(tempdir, f"{ref_idx}_to_{idx}_input.yuv")
                 log_base_name = f"{ref_idx}_to_{idx}"
-                log_path = os.path.join(log_root, log_base_name + f"-{kwargs.get('preset', 'fast')}-encode-4x4.csv")
+                log_path = os.path.join(log_root, log_base_name + f"-{kwargs.get('preset', 'fast')}-{stage}-{granularity}x{granularity}.csv")
                 with open(yuv_file_path, "wb") as f:
                     f.write(cv2.cvtColor(target_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
                     f.write(cv2.cvtColor(source_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
@@ -178,9 +214,9 @@ class X265MVWrapper(OpticalFlowWrapper):
                     lookahead_flag=True,
                     encoding_flag=True,
                 )
-                X265MVWrapper._update_flow(log_path, forward_flows, idx)
+                X265MVWrapper._update_flow(log_path, forward_flows, idx, granularity)
 
         forward_flows = torch.from_numpy(forward_flows).to(self.device)
         backward_flows = torch.from_numpy(backward_flows).to(self.device)
         forward_occlusions, backward_occlusions = forward_backward_consistency_check(forward_flows, backward_flows)
-        return [forward_flows, backward_flows], [forward_occlusions, backward_occlusions]
+        return [forward_flows, backward_flows], [forward_occlusions, backward_occlusions], None

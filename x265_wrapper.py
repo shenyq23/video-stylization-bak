@@ -1,6 +1,4 @@
 import os
-import shutil
-from collections import namedtuple
 from command import Command
 
 class X265EncoderWrapper:
@@ -19,6 +17,9 @@ class X265EncoderWrapper:
         frame_rate=None,
         lookahead_flag=True,
         encoding_flag=True,
+        enable_p_intra=False,
+        ctu=16,
+        crf=23,
     ):
         assert input_path[-4:] in [".yuv", ".y4m"]
 
@@ -31,7 +32,11 @@ class X265EncoderWrapper:
             .add_flag("out-motion-dir", log_root, is_important=True, is_full=True)
             .add_flag("out-motion-name", log_base_name, is_important=True, is_full=True)
             .add_flag("print-motion-info", 2 * int(encoding_flag) + int(lookahead_flag), is_important=True, is_full=True)
-            .add_flag("frames", frame_cnt, is_important=True, is_full=True))
+            .add_flag("frames", frame_cnt, is_important=True, is_full=True)
+            .add_flag("ctu", ctu, is_full=True, is_important=True)
+            .add_flag("crf", crf, is_full=True, is_important=True))
+        if not enable_p_intra:
+            cmd = cmd.add_flag("no-p-intra", is_full=True, is_important=True)
         if input_path[-4:] == ".yuv":
             assert size is not None
             assert frame_rate is not None
@@ -39,9 +44,6 @@ class X265EncoderWrapper:
                 .add_flag("input-res", size, is_important=True, is_full=True)
                 .add_flag("fps", frame_rate, is_important=True, is_full=True))
         cmd.run()
-
-MVInfo = namedtuple("MVInfo", ["delta_poc", "mvx", "mvy", "weight"])
-CUEntry = namedtuple("CUEntry", ["forward_info", "backward_info"])
         
 if __name__ == "__main__":
     encoder = X265EncoderWrapper()
