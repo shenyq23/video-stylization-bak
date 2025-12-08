@@ -95,34 +95,29 @@ def main(args):
             assert width == stylized_width and height == stylized_height, "resolution mismatch between original and stylized videos"
             size = f"{width}x{height}"
 
+        x265_params = {}
         if args.flow_model == "gmflow":
             from optical_wrapper import GMFlowWrapper as FlowModelClass
-            x265_params = {}
+        elif args.flow_model == "raft":
+            from optical_wrapper import RAFTFlowWrapper as FlowModelClass
         elif args.flow_model == "x265":
             from optical_wrapper import X265MVWrapper as FlowModelClass
             x265_params = json.loads(args.x265_params.replace("'", '"'))  # @todo: bad implementation
-            if "size" in x265_params:
-                del x265_params["size"]
-            if "frame_rate" in x265_params:
-                del x265_params["frame_rate"]
         elif args.flow_model == "mix":
             from optical_wrapper import GMFlowWrapper as OcclusionModelClass
             from optical_wrapper import X265MVWrapper as FlowModelClass
             x265_params = json.loads(args.x265_params.replace("'", '"'))  # @todo: bad implementation
-            if "size" in x265_params:
-                del x265_params["size"]
-            if "frame_rate" in x265_params:
-                del x265_params["frame_rate"]
         elif args.flow_model == "reverse_mix":
             from optical_wrapper import X265MVWrapper as OcclusionModelClass
             from optical_wrapper import GMFlowWrapper as FlowModelClass
             x265_params = json.loads(args.x265_params.replace("'", '"'))  # @todo: bad implementation
-            if "size" in x265_params:
-                del x265_params["size"]
-            if "frame_rate" in x265_params:
-                del x265_params["frame_rate"]
         else:
             raise NotImplementedError(f"flow model {args.flow_model} not implemented.")
+        
+        if "size" in x265_params:
+            del x265_params["size"]
+        if "frame_rate" in x265_params:
+            del x265_params["frame_rate"]
         
         flow_model = FlowModelClass(args.device)
         ref_frame_idx_list = [0] + [(i - 1) // args.batch_size * args.batch_size for i in range(1, len(frames))]
@@ -155,7 +150,7 @@ def main(args):
             output_frames.append(((warped_frame.detach().cpu().numpy().transpose(1, 2, 0) + 1.0) * 127.5).astype(np.uint8))
 
     model_name = args.flow_model
-    if model_name == "x265":
+    if model_name == "x265" or model_name == "mix" or model_name == "reverse_mix":
         for k, v in x265_params.items():
             model_name += f"_{k}_{v}"
 
@@ -206,7 +201,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Optical Flow Video Processing")
     parser.add_argument("--video_name", type=str, help="Name of the video folder in ./input")
-    parser.add_argument("--flow_model", type=str, choices=["gmflow", "x265", "mix", "reverse_mix"], help="Optical flow model to use")
+    parser.add_argument("--flow_model", type=str, choices=["gmflow", "raft", "x265", "mix", "reverse_mix"], help="Optical flow model to use")
     parser.add_argument("--batch_size", type=int, help="Batch size for processing frames")
     parser.add_argument("--resolution", type=int, default=None, help="Resolution to resize frames")
     parser.add_argument("--start_frame_idx", type=int, default=0, help="Starting frame index to process")

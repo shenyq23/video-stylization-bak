@@ -7,6 +7,7 @@ import tempfile
 import cv2
 import pandas as pd
 import numpy as np
+from types import SimpleNamespace
 
 sys.path.append("./deps/gmflow")
 sys.path.append("./deps/RAFT")
@@ -111,14 +112,112 @@ class GMFlowWrapper(OpticalFlowWrapper):
 class RAFTFlowWrapper(OpticalFlowWrapper):
     def __init__(self, device):
         super().__init__(device)
-        self.model = torch.nn.DataParallel(RAFT())
-        self.model.load_state_dict(torch.load("./deps/RAFT/models/raft-things.pth"))
-        self.model = self.model.module
+        
+        class RAFTArgs(SimpleNamespace):
+            def __contains__(self, key):
+                return hasattr(self, key)
+
+        args = RAFTArgs()
+        args.small = False
+        args.mixed_precision = False
+        args.dropout = 0
+        args.alternate_corr = False
+
+        # instantiate RAFT with args
+        raft_model = RAFT(args)
+
+        # wrap with DataParallel if multiple GPUs available (keeps consistency with previous code)
+        if torch.cuda.device_count() > 1:
+            raft_model = torch.nn.DataParallel(raft_model)
+
+        # load checkpoint robustly (supports several common key formats)
+        ckpt_path = "./deps/RAFT/models/raft-things.pth"
+        if os.path.exists(ckpt_path):
+            ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
+            if isinstance(ckpt, dict):
+                if 'state_dict' in ckpt:
+                    state = ckpt['state_dict']
+                elif 'model' in ckpt:
+                    state = ckpt['model']
+                else:
+                    state = ckpt
+            else:
+                state = ckpt
+
+            try:
+                raft_model.load_state_dict(state, strict=False)
+            except Exception:
+                # try stripping possible 'module.' prefixes
+                from collections import OrderedDict
+
+                new_state = OrderedDict()
+                for k, v in state.items():
+                    name = k.replace('module.', '') if k.startswith('module.') else k
+                    new_state[name] = v
+                raft_model.load_state_dict(new_state, strict=False)
+        else:
+            print(f"RAFT checkpoint not found at {ckpt_path}; initialized with random weights")
+
+        self.model = raft_model.module if isinstance(raft_model, torch.nn.DataParallel) else raft_model
         self.model.to(self.device)
         self.model.eval()
     
     def compute_flow_and_occlusion(self, frames, ref_frame_idx_list, **kwargs):
-        raise NotImplementedError
+        # frames: list/iterable of HxWx3 numpy arrays (BGR, 0-255)
+        # ref_frame_idx_list: list mapping target index -> reference index
+        with torch.no_grad():
+            images = torch.stack([torch.from_numpy(frame).permute(2, 0, 1).float() for frame in frames], dim=0).to(self.device)
+            _, _, H, W = images.shape
+
+            forward_flows = torch.zeros((len(frames), 2, H, W), device=self.device, dtype=torch.float32)
+            backward_flows = torch.zeros((len(frames), 2, H, W), device=self.device, dtype=torch.float32)
+            forward_occlusions = torch.zeros((len(frames), H, W), device=self.device, dtype=torch.float32)
+            backward_occlusions = torch.zeros((len(frames), H, W), device=self.device, dtype=torch.float32)
+
+            elapsed_times = []
+            for i, ref_idx in enumerate(ref_frame_idx_list):
+                source_frame = images[ref_idx : ref_idx + 1]
+                target_frame = images[i : i + 1]
+
+                # forward: source -> target
+                with torch.cuda.amp.autocast(enabled=True):
+                    start = time.time()
+                    results_fwd = self.model(source_frame, target_frame)
+                    end = time.time()
+                    elapsed_times.append(end - start)
+
+                    # RAFT returns a list of predictions (pyramid), take final
+                    flow_pred_fwd = results_fwd[-1] if isinstance(results_fwd, (list, tuple)) else results_fwd
+
+                # backward: target -> source
+                with torch.cuda.amp.autocast(enabled=True):
+                    results_bwd = self.model(target_frame, source_frame)
+                    flow_pred_bwd = results_bwd[-1] if isinstance(results_bwd, (list, tuple)) else results_bwd
+
+                # flow_pred_* : [N, 2, H, W]
+                forward_flow = flow_pred_fwd
+                backward_flow = flow_pred_bwd
+
+                # occlusion via forward-backward consistency
+                forward_occlusion, backward_occlusion = forward_backward_consistency_check(forward_flow, backward_flow)
+
+                # photometric refinement similar to GMFlowWrapper
+                warped_ref = flow_warp(source_frame, backward_flow)
+                backward_occlusion = torch.clamp(backward_occlusion + (abs(target_frame - warped_ref).mean(dim=1) > 255 * 0.25).float(), 0, 1)
+                warped_tar = flow_warp(target_frame, forward_flow)
+                forward_occlusion = torch.clamp(forward_occlusion + (abs(source_frame - warped_tar).mean(dim=1) > 255 * 0.25).float(), 0, 1)
+
+                forward_flows[i] = forward_flow[0].float()
+                backward_flows[i] = backward_flow[0].float()
+                forward_occlusions[i] = forward_occlusion[0].float()
+                backward_occlusions[i] = backward_occlusion[0].float()
+
+                gc.collect()
+                torch.cuda.empty_cache()
+
+                print(f"RAFT: Processed frame #{i}/{len(frames)}: {elapsed_times[-1] * 1000:.4f} ms")
+
+            return [forward_flows, backward_flows], [forward_occlusions, backward_occlusions], np.mean(elapsed_times) * 1000
 
 class X265MVWrapper(OpticalFlowWrapper):
     def __init__(self, device, encoder_path="/home/holder/optical/bin/x265"):
@@ -165,7 +264,7 @@ class X265MVWrapper(OpticalFlowWrapper):
                 # decide log path by stage
                 stage = kwargs["stage"]  # should be lookahead or encode
                 if stage == "lookahead":
-                    granularity = 8
+                    granularity = 16
                 elif stage == "encode":
                     granularity = 4
                 else:
