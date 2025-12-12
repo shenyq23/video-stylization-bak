@@ -13,6 +13,55 @@ import json
 
 from optical_wrapper import universal_flow_warp
 
+def to_uint8_rgb(frame: np.ndarray) -> np.ndarray:
+    if frame.dtype == np.uint8:
+        return frame
+    if frame.dtype in (np.float32, np.float64):
+        # tolerate either [0,1] or [0,255]
+        mx = float(np.max(frame)) if frame.size else 0.0
+        if mx <= 1.5:
+            frame = frame * 255.0
+        return np.clip(frame, 0, 255).astype(np.uint8)
+    return frame.astype(np.uint8)
+
+
+def diff_uint8_frames(a, b, mode: str, amplify: float, valid_mask: np.ndarray):
+    a = to_uint8_rgb(a)
+    b = to_uint8_rgb(b)
+    if a.shape != b.shape:
+        raise ValueError(f"frame shape mismatch: {a.shape} vs {b.shape}")
+
+    diff = cv2.absdiff(a, b)  # uint8 RGB
+    if valid_mask.shape != diff.shape[:2]:
+        raise ValueError(f"valid_mask shape mismatch: {valid_mask.shape} vs {diff.shape[:2]}")
+    valid = valid_mask.astype(bool)
+
+    denom = int(valid.sum()) * 3
+    if denom <= 0:
+        mae = 0.0
+    else:
+        mae = float(diff.astype(np.float32)[valid].sum() / denom)
+
+    amplify = float(amplify)
+    if amplify != 1.0:
+        diff = np.clip(diff.astype(np.float32) * amplify, 0, 255).astype(np.uint8)
+    diff[~valid] = 0
+    
+    if mode == "abs_rgb":
+        return diff, mae
+
+    diff_gray = cv2.cvtColor(diff, cv2.COLOR_RGB2GRAY)
+    if valid is not None:
+        diff_gray[~valid] = 0
+    if mode == "abs_gray":
+        return cv2.cvtColor(diff_gray, cv2.COLOR_GRAY2RGB), mae
+    if mode == "heatmap":
+        heat = cv2.applyColorMap(diff_gray, cv2.COLORMAP_TURBO)
+        heat = cv2.cvtColor(heat, cv2.COLOR_BGR2RGB)
+        return heat, mae
+
+    raise ValueError(f"unknown diff mode: {mode}")
+
 def resize_image(input_image, resolution):
     H, W, C = input_image.shape
     H = float(H)
@@ -168,6 +217,33 @@ def main(args):
                 frame = (frame * 255).astype(np.uint8)
             writer.append_data(frame)
 
+    # diff video (stylized vs output)
+    if args.write_diff:
+        diff_output_path = os.path.join("./output", args.video_name, f"{model_name}_diff_{args.diff_mode}_amp_{args.diff_amplify}_batch_{args.batch_size}.mp4")
+        diff_frames = []
+        diff_mae = []
+        for i in range(len(frames)):
+            diff_frame, mae = diff_uint8_frames(
+                stylized_frames[i],
+                output_frames[i],
+                args.diff_mode,
+                args.diff_amplify,
+                valid_mask=backward_occlusions[i].detach().squeeze().cpu().numpy(),
+            )
+            diff_frames.append(diff_frame)
+            diff_mae.append(mae)
+        with imageio.get_writer(diff_output_path, fps=args.frame_rate, codec="libx264") as writer:
+            for frame in diff_frames:
+                writer.append_data(frame)
+
+        plt.figure()
+        plt.plot(range(len(diff_mae)), diff_mae)
+        plt.xlabel("Frame Index")
+        plt.ylabel("Mean Absolute Pixel Difference")
+        plt.title("Stylized vs Output per-frame diff")
+        diff_plot_path = os.path.join("./output", args.video_name, f"{model_name}_diff_{args.diff_mode}_amp_{args.diff_amplify}_batch_{args.batch_size}.png")
+        plt.savefig(diff_plot_path)
+
     # flow & occlusion video
     final_output_frames = []
     flow_output_path = os.path.join("./output", args.video_name, f"{model_name}_flows_batch_{args.batch_size}.mp4")
@@ -208,8 +284,11 @@ if __name__ == "__main__":
     parser.add_argument("--max_frames", type=int, default=40, help="Maximum number of frames to process")
     parser.add_argument("--frame_rate", type=int, default=8, help="Frame rate for output video")
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to run the model on")
-    parser.add_argument("--discard_key_frames", type=bool, default=False, help="Whether to keep key frames unchanged")
+    parser.add_argument("--discard_key_frames", action="store_true", help="Whether to keep key frames unchanged")
     parser.add_argument("--x265_params", type=str, default="", help="Additional x265 params")
+    parser.add_argument("--write_diff", action="store_true", help="Write a per-frame difference visualization between stylized and output")
+    parser.add_argument("--diff_mode", type=str, default="heatmap", choices=["abs_rgb", "abs_gray", "heatmap"], help="Diff visualization mode")
+    parser.add_argument("--diff_amplify", type=float, default=4.0, help="Amplify factor for diff (e.g., 4.0 makes small differences more visible)")
 
     args = parser.parse_args()
     main(args)
