@@ -24,10 +24,10 @@ def universal_flow_warp(frame, flow):
 class OpticalFlowWrapper:
     def __init__(self, device):
         self.device = device
-    
+
     def compute_flow_and_occlusion(self, frames, ref_frame_idx_list, **kwargs):
         raise NotImplementedError
-    
+
 class GMFlowWrapper(OpticalFlowWrapper):
     def _load_gmflow_model(self):
         optical_flow_model = GMFlow(
@@ -39,7 +39,7 @@ class GMFlowWrapper(OpticalFlowWrapper):
             ffn_dim_expansion=4,
             num_transformer_layers=6,
         ).to(self.device)
-            
+
         checkpoint = torch.load("./deps/gmflow/pretrained/gmflow_sintel-0c07dcb3.pth", map_location=lambda storage, loc: storage)
         weights = checkpoint["model"] if "model" in checkpoint else checkpoint
         optical_flow_model.load_state_dict(weights, strict=False)
@@ -49,11 +49,11 @@ class GMFlowWrapper(OpticalFlowWrapper):
             param.requires_grad = False
 
         return optical_flow_model
-    
+
     def __init__(self, device):
         super().__init__(device)
         self.model = self._load_gmflow_model()
-    
+
     def compute_flow_and_occlusion(self, frames, ref_frame_idx_list, **kwargs):
         """ no other kwargs needed for gmflow
         """
@@ -112,7 +112,7 @@ class GMFlowWrapper(OpticalFlowWrapper):
 class RAFTFlowWrapper(OpticalFlowWrapper):
     def __init__(self, device):
         super().__init__(device)
-        
+
         class RAFTArgs(SimpleNamespace):
             def __contains__(self, key):
                 return hasattr(self, key)
@@ -161,7 +161,7 @@ class RAFTFlowWrapper(OpticalFlowWrapper):
         self.model = raft_model.module if isinstance(raft_model, torch.nn.DataParallel) else raft_model
         self.model.to(self.device)
         self.model.eval()
-    
+
     def compute_flow_and_occlusion(self, frames, ref_frame_idx_list, **kwargs):
         # frames: list/iterable of HxWx3 numpy arrays (BGR, 0-255)
         # ref_frame_idx_list: list mapping target index -> reference index
@@ -237,6 +237,12 @@ class X265MVWrapper(OpticalFlowWrapper):
             mvx = float(row["mvx"])
             mvy = float(row["mvy"])
             delta_poc = int(row["deltapoc"])
+
+            # x265 uses quarter pixel precision
+            if "mv_precision" in df.columns:
+                mv_precision = float(row["mv_precision"])
+                mvx = mvx * mv_precision
+                mvy = mvy * mv_precision
 
             assert w == granularity and h == granularity
             if delta_poc == 0:
