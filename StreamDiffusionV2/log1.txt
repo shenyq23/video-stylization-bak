@@ -1,0 +1,659 @@
+Input video tensor shape: torch.Size([1, 3, 254, 480, 832])
+GPU before pipeline is 0.568359375
+KV inference with 1 frames per block
+GPU pipeline is 0.5703125
+Text encoder is intentionally kept on CPU.
+GPU pipeline to is 3.708984375
+['A highly detailed futuristic cybernetic bird, blending avian elegance with advanced robotics. Its feathers are metallic plates with iridescent reflections of blue and purple neon lights, each joint covered by intricate mechanical gears and wires. The eyes glow with a pulsating red core, scanning the environment like a high-tech sensor. The wings expand with layered steel feathers, partially transparent with holographic circuits flowing through them. The bird is perched on a glowing cyberpunk rooftop railing, with a vast futuristic city in the background filled with holographic billboards, flying drones, and neon-lit skyscrapers. The atmosphere is cinematic, ultra-realistic, and science-fiction inspired, combining photorealism with a high-tech futuristic style.']
+{'config': {'model_name': 'wan', 'generator_name': 'causal_wan', 'generator_ckpt': 'ckpts/autoregressive_checkpoint/model.pt', 'generator_fsdp_wrap_strategy': 'size', 'real_score_fsdp_wrap_strategy': 'size', 'fake_score_fsdp_wrap_strategy': 'size', 'text_encoder_fsdp_wrap_strategy': 'size', 'generator_grad': {'model': True}, 'real_score_grad': {'model': False}, 'fake_score_grad': {'model': True}, 'denoising_step_list': [700, 600, 500, 400, 0], 'num_train_timestep': 1000, 'timestep_shift': 8.0, 'real_guidance_scale': 3.5, 'generator_task': 'causal_video', 'real_task_type': 'bidirectional_video', 'fake_task_type': 'bidirectional_video', 'denoising_loss_type': 'flow', 'mixed_precision': True, 'seed': 0, 'wandb_host': 'WANDB_HOST', 'wandb_key': 'WANDB_KEY', 'wandb_entity': 'tyin', 'wandb_project': 'causvid', 'wandb_name': 'wan_causal_dmd', 'sharding_strategy': 'hybrid_full', 'lr': 2e-06, 'beta1': 0.9, 'beta2': 0.999, 'data_path': 'mixkit_latents_lmdb', 'batch_size': 1, 'log_iters': 200, 'negative_prompt': '色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走', 'dfake_gen_update_ratio': 5, 'image_or_video_shape': [1, 21, 16, 60, 104], 'output_path': '/mnt/localssd/wan_causal_dmd', 'distillation_loss': 'dmd', 'gradient_checkpointing': True, 'backward_simulation': False, 'num_frame_per_block': 1, 'num_kv_cache': 6, 'num_sink_tokens': 3, 'adapt_sink_threshold': 0.2, 'warp_denoising_step': False, 'config_path': 'configs/wan_causal_dmd_v2v.yaml', 'checkpoint_folder': 'ckpts/wan_causal_dmd_v2v', 'output_folder': 'outputs/', 'prompt_file_path': 'prompt.txt', 'video_path': '../../videos/bird.mp4', 'noise_scale': 0.7, 'height': 480, 'width': 832, 'fps': 16, 'step': 4, 'model_type': 'T2V-1.3B', 'num_frames': 81, 'fixed_noise_scale': False}, 'device': device(type='cuda', index=1), 'logger': <Logger SingleGPUInference (INFO)>, 'pipeline': CausalStreamInferencePipeline(
+  (generator): CausalWanDiffusionWrapper(
+    (model): CausalWanModel(
+      (patch_embedding): Conv3d(16, 1536, kernel_size=(1, 2, 2), stride=(1, 2, 2))
+      (text_embedding): Sequential(
+        (0): Linear(in_features=4096, out_features=1536, bias=True)
+        (1): GELU(approximate='tanh')
+        (2): Linear(in_features=1536, out_features=1536, bias=True)
+      )
+      (time_embedding): Sequential(
+        (0): Linear(in_features=256, out_features=1536, bias=True)
+        (1): SiLU()
+        (2): Linear(in_features=1536, out_features=1536, bias=True)
+      )
+      (time_projection): Sequential(
+        (0): SiLU()
+        (1): Linear(in_features=1536, out_features=9216, bias=True)
+      )
+      (blocks): ModuleList(
+        (0-29): 30 x CausalWanAttentionBlock(
+          (norm1): WanLayerNorm((1536,), eps=1e-06, elementwise_affine=False)
+          (self_attn): CausalWanSelfAttention(
+            (q): Linear(in_features=1536, out_features=1536, bias=True)
+            (k): Linear(in_features=1536, out_features=1536, bias=True)
+            (v): Linear(in_features=1536, out_features=1536, bias=True)
+            (o): Linear(in_features=1536, out_features=1536, bias=True)
+            (norm_q): WanRMSNorm()
+            (norm_k): WanRMSNorm()
+          )
+          (norm3): WanLayerNorm((1536,), eps=1e-06, elementwise_affine=True)
+          (cross_attn): WanT2VCrossAttention(
+            (q): Linear(in_features=1536, out_features=1536, bias=True)
+            (k): Linear(in_features=1536, out_features=1536, bias=True)
+            (v): Linear(in_features=1536, out_features=1536, bias=True)
+            (o): Linear(in_features=1536, out_features=1536, bias=True)
+            (norm_q): WanRMSNorm()
+            (norm_k): WanRMSNorm()
+          )
+          (norm2): WanLayerNorm((1536,), eps=1e-06, elementwise_affine=False)
+          (ffn): Sequential(
+            (0): Linear(in_features=1536, out_features=8960, bias=True)
+            (1): GELU(approximate='tanh')
+            (2): Linear(in_features=8960, out_features=1536, bias=True)
+          )
+        )
+      )
+      (head): CausalHead(
+        (norm): WanLayerNorm((1536,), eps=1e-06, elementwise_affine=False)
+        (head): Linear(in_features=1536, out_features=64, bias=True)
+      )
+    )
+  )
+  (text_encoder): WanTextEncoder(
+    (text_encoder): T5Encoder(
+      (token_embedding): Embedding(256384, 4096)
+      (dropout): Dropout(p=0.1, inplace=False)
+      (blocks): ModuleList(
+        (0-23): 24 x T5SelfAttention(
+          (norm1): T5LayerNorm()
+          (attn): T5Attention(
+            (q): Linear(in_features=4096, out_features=4096, bias=False)
+            (k): Linear(in_features=4096, out_features=4096, bias=False)
+            (v): Linear(in_features=4096, out_features=4096, bias=False)
+            (o): Linear(in_features=4096, out_features=4096, bias=False)
+            (dropout): Dropout(p=0.1, inplace=False)
+          )
+          (norm2): T5LayerNorm()
+          (ffn): T5FeedForward(
+            (gate): Sequential(
+              (0): Linear(in_features=4096, out_features=10240, bias=False)
+              (1): GELU()
+            )
+            (fc1): Linear(in_features=4096, out_features=10240, bias=False)
+            (fc2): Linear(in_features=10240, out_features=4096, bias=False)
+            (dropout): Dropout(p=0.1, inplace=False)
+          )
+          (pos_embedding): T5RelativeEmbedding(
+            (embedding): Embedding(32, 64)
+          )
+        )
+      )
+      (norm): T5LayerNorm()
+    )
+  )
+  (vae): WanVAEWrapper(
+    (model): WanVAE_(
+      (encoder): Encoder3d(
+        (conv1): CausalConv3d(3, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+        (downsamples): Sequential(
+          (0): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (1): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (2): Resample(
+            (resample): Sequential(
+              (0): ZeroPad2d((0, 1, 0, 1))
+              (1): Conv2d(96, 96, kernel_size=(3, 3), stride=(2, 2))
+            )
+          )
+          (3): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(96, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): CausalConv3d(96, 192, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+          )
+          (4): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (5): Resample(
+            (resample): Sequential(
+              (0): ZeroPad2d((0, 1, 0, 1))
+              (1): Conv2d(192, 192, kernel_size=(3, 3), stride=(2, 2))
+            )
+            (time_conv): CausalConv3d(192, 192, kernel_size=(3, 1, 1), stride=(2, 1, 1))
+          )
+          (6): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(192, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): CausalConv3d(192, 384, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+          )
+          (7): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (8): Resample(
+            (resample): Sequential(
+              (0): ZeroPad2d((0, 1, 0, 1))
+              (1): Conv2d(384, 384, kernel_size=(3, 3), stride=(2, 2))
+            )
+            (time_conv): CausalConv3d(384, 384, kernel_size=(3, 1, 1), stride=(2, 1, 1))
+          )
+          (9): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (10): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+        )
+        (middle): Sequential(
+          (0): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (1): AttentionBlock(
+            (norm): RMS_norm()
+            (to_qkv): Conv2d(384, 1152, kernel_size=(1, 1), stride=(1, 1))
+            (proj): Conv2d(384, 384, kernel_size=(1, 1), stride=(1, 1))
+          )
+          (2): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+        )
+        (head): Sequential(
+          (0): RMS_norm()
+          (1): SiLU()
+          (2): CausalConv3d(384, 32, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+        )
+      )
+      (conv1): CausalConv3d(32, 32, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+      (conv2): CausalConv3d(16, 16, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+      (decoder): Decoder3d(
+        (conv1): CausalConv3d(16, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+        (middle): Sequential(
+          (0): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (1): AttentionBlock(
+            (norm): RMS_norm()
+            (to_qkv): Conv2d(384, 1152, kernel_size=(1, 1), stride=(1, 1))
+            (proj): Conv2d(384, 384, kernel_size=(1, 1), stride=(1, 1))
+          )
+          (2): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+        )
+        (upsamples): Sequential(
+          (0): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (1): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (2): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (3): Resample(
+            (resample): Sequential(
+              (0): Upsample(scale_factor=(2.0, 2.0), mode='nearest-exact')
+              (1): Conv2d(384, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+            )
+            (time_conv): CausalConv3d(384, 768, kernel_size=(3, 1, 1), stride=(1, 1, 1))
+          )
+          (4): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(192, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): CausalConv3d(192, 384, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+          )
+          (5): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (6): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(384, 384, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (7): Resample(
+            (resample): Sequential(
+              (0): Upsample(scale_factor=(2.0, 2.0), mode='nearest-exact')
+              (1): Conv2d(384, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+            )
+            (time_conv): CausalConv3d(384, 768, kernel_size=(3, 1, 1), stride=(1, 1, 1))
+          )
+          (8): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (9): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (10): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(192, 192, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (11): Resample(
+            (resample): Sequential(
+              (0): Upsample(scale_factor=(2.0, 2.0), mode='nearest-exact')
+              (1): Conv2d(192, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+            )
+          )
+          (12): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (13): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+          (14): ResidualBlock(
+            (residual): Sequential(
+              (0): RMS_norm()
+              (1): SiLU()
+              (2): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+              (3): RMS_norm()
+              (4): SiLU()
+              (5): Dropout(p=0.0, inplace=False)
+              (6): CausalConv3d(96, 96, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+            )
+            (shortcut): Identity()
+          )
+        )
+        (head): Sequential(
+          (0): RMS_norm()
+          (1): SiLU()
+          (2): CausalConv3d(96, 3, kernel_size=(3, 3, 3), stride=(1, 1, 1))
+        )
+      )
+    )
+  )
+), 't_dit': 100.0, 't_total': 100.0, 'processed': 0}
+init denoising torch.Size([1, 3, 254, 480, 832]) torch.Size([1, 3, 5, 480, 832]) torch.Size([1, 16, 2, 60, 104]) 4
+torch.Size([1, 2, 16, 60, 104]) torch.Size([1, 2, 16, 60, 104])
+GPU after prepare is 12.00390625
+GPU after vae is 16.537109375
+0 1. vae encode:  14.185686588287354
+2. dit inference:  0.19943666458129883
+1 1. vae encode:  14.516014814376831
+2. dit inference:  0.19860506057739258
+2 1. vae encode:  14.84521746635437
+2. dit inference:  0.19922780990600586
+3 1. vae encode:  15.175027847290039
+2. dit inference:  0.1930980682373047
+3. vae decode:  0.2291429042816162
+4 1. vae encode:  0.13108062744140625
+2. dit inference:  0.20189738273620605
+3. vae decode:  0.22799015045166016
+5 1. vae encode:  0.13161849975585938
+2. dit inference:  0.20337367057800293
+3. vae decode:  0.2407834529876709
+6 1. vae encode:  0.13068652153015137
+2. dit inference:  0.20277118682861328
+3. vae decode:  0.24103069305419922
+7 1. vae encode:  0.1306905746459961
+2. dit inference:  0.20560693740844727
+3. vae decode:  0.24088168144226074
+8 1. vae encode:  0.13068556785583496
+2. dit inference:  0.20473527908325195
+3. vae decode:  0.24071216583251953
+9 1. vae encode:  0.13071346282958984
+2. dit inference:  0.20014047622680664
+3. vae decode:  0.24103832244873047
+10 1. vae encode:  0.13080835342407227
+2. dit inference:  0.20488810539245605
+3. vae decode:  0.240875244140625
+11 1. vae encode:  0.1308271884918213
+2. dit inference:  0.20058774948120117
+3. vae decode:  0.2409343719482422
+12 1. vae encode:  0.13084053993225098
+2. dit inference:  0.20026350021362305
+3. vae decode:  0.24072694778442383
+13 1. vae encode:  0.13075518608093262
+2. dit inference:  0.20384645462036133
+3. vae decode:  0.24088191986083984
+14 1. vae encode:  0.1308748722076416
+2. dit inference:  0.20093202590942383
+3. vae decode:  0.2410743236541748
+15 1. vae encode:  0.1308274269104004
+2. dit inference:  0.20106887817382812
+3. vae decode:  0.24060416221618652
+16 1. vae encode:  0.13149690628051758
+2. dit inference:  0.20119118690490723
+3. vae decode:  0.24117708206176758
+17 1. vae encode:  0.13087868690490723
+2. dit inference:  0.20079302787780762
+3. vae decode:  0.24078655242919922
+18 1. vae encode:  0.13083672523498535
+2. dit inference:  0.20127415657043457
+3. vae decode:  0.24094653129577637
+19 1. vae encode:  0.13081955909729004
+2. dit inference:  0.20469880104064941
+3. vae decode:  0.24526000022888184
+20 1. vae encode:  0.13087821006774902
+2. dit inference:  0.20563793182373047
+3. vae decode:  0.2409670352935791
+21 1. vae encode:  0.13082265853881836
+2. dit inference:  0.20102286338806152
+3. vae decode:  0.24097299575805664
+22 1. vae encode:  0.13075804710388184
+2. dit inference:  0.20397377014160156
+3. vae decode:  0.24091410636901855
+23 1. vae encode:  0.1307833194732666
+2. dit inference:  0.20069646835327148
+3. vae decode:  0.24094653129577637
+24 1. vae encode:  0.13079380989074707
+2. dit inference:  0.20807552337646484
+3. vae decode:  0.24187302589416504
+25 1. vae encode:  0.13080692291259766
+2. dit inference:  0.204329252243042
+3. vae decode:  0.24164509773254395
+26 1. vae encode:  0.13086318969726562
+2. dit inference:  0.2011089324951172
+3. vae decode:  0.24183964729309082
+27 1. vae encode:  0.13084816932678223
+2. dit inference:  0.20600342750549316
+3. vae decode:  0.24201011657714844
+28 1. vae encode:  0.13085031509399414
+2. dit inference:  0.2012331485748291
+3. vae decode:  0.24157214164733887
+29 1. vae encode:  0.13086533546447754
+2. dit inference:  0.20429182052612305
+3. vae decode:  0.24860358238220215
+30 1. vae encode:  0.130875825881958
+2. dit inference:  0.20113706588745117
+3. vae decode:  0.24176931381225586
+31 1. vae encode:  0.13083529472351074
+2. dit inference:  0.20548725128173828
+3. vae decode:  0.24164152145385742
+32 1. vae encode:  0.1309375762939453
+2. dit inference:  0.20113420486450195
+3. vae decode:  0.24182558059692383
+33 1. vae encode:  0.13083910942077637
+2. dit inference:  0.20719432830810547
+3. vae decode:  0.24271512031555176
+34 1. vae encode:  0.1308305263519287
+2. dit inference:  0.20099759101867676
+3. vae decode:  0.24155592918395996
+35 1. vae encode:  0.13085150718688965
+2. dit inference:  0.20638179779052734
+3. vae decode:  0.24182605743408203
+36 1. vae encode:  0.13085651397705078
+2. dit inference:  0.20108723640441895
+3. vae decode:  0.24155211448669434
+37 1. vae encode:  0.13086533546447754
+2. dit inference:  0.20894622802734375
+3. vae decode:  0.24169254302978516
+38 1. vae encode:  0.13167643547058105
+2. dit inference:  0.20157432556152344
+3. vae decode:  0.2417435646057129
+39 1. vae encode:  0.1308596134185791
+2. dit inference:  0.20848703384399414
+3. vae decode:  0.24856114387512207
+40 1. vae encode:  0.13084721565246582
+2. dit inference:  0.2012462615966797
+3. vae decode:  0.24144792556762695
+41 1. vae encode:  0.13081979751586914
+2. dit inference:  0.2079770565032959
+3. vae decode:  0.2419884204864502
+42 1. vae encode:  0.13082242012023926
+2. dit inference:  0.20412468910217285
+3. vae decode:  0.24152326583862305
+43 1. vae encode:  0.13083910942077637
+2. dit inference:  0.20213603973388672
+3. vae decode:  0.24197745323181152
+44 1. vae encode:  0.1308445930480957
+2. dit inference:  0.20203161239624023
+3. vae decode:  0.24242210388183594
+45 1. vae encode:  0.13109803199768066
+2. dit inference:  0.201430082321167
+3. vae decode:  0.24187898635864258
+46 1. vae encode:  0.13109493255615234
+2. dit inference:  0.20217442512512207
+3. vae decode:  0.24225950241088867
+47 1. vae encode:  0.13089323043823242
+2. dit inference:  0.20222210884094238
+3. vae decode:  0.24233317375183105
+48 1. vae encode:  0.13107824325561523
+2. dit inference:  0.2018570899963379
+3. vae decode:  0.22906041145324707
+49 1. vae encode:  0.13104796409606934
+2. dit inference:  0.207230806350708
+3. vae decode:  0.24610495567321777
+50 1. vae encode:  0.1310737133026123
+2. dit inference:  0.20539164543151855
+3. vae decode:  0.22885513305664062
+51 1. vae encode:  0.13105154037475586
+2. dit inference:  0.20239949226379395
+3. vae decode:  0.22894859313964844
+52 1. vae encode:  0.1310725212097168
+2. dit inference:  0.20668816566467285
+3. vae decode:  0.24232006072998047
+53 1. vae encode:  0.13110709190368652
+2. dit inference:  0.2058098316192627
+3. vae decode:  0.24287199974060059
+54 1. vae encode:  0.13145709037780762
+2. dit inference:  0.20487284660339355
+3. vae decode:  0.2578887939453125
+55 1. vae encode:  0.13131499290466309
+2. dit inference:  0.20659708976745605
+3. vae decode:  0.24564743041992188
+56 1. vae encode:  0.13111209869384766
+2. dit inference:  0.20333027839660645
+3. vae decode:  0.2429037094116211
+57 1. vae encode:  0.1311054229736328
+2. dit inference:  0.20321917533874512
+3. vae decode:  0.24325037002563477
+58 1. vae encode:  0.1311962604522705
+2. dit inference:  0.20198655128479004
+3. vae decode:  0.24320650100708008
+59 1. vae encode:  0.1311171054840088
+2. dit inference:  0.2033214569091797
+3. vae decode:  0.2432107925415039
+60 1. vae encode:  0.13109827041625977
+2. dit inference:  0.20287418365478516
+3. vae decode:  0.2427530288696289
+61 1. vae encode:  0.13106822967529297
+2. dit inference:  0.20160388946533203
+3. vae decode:  0.24281620979309082
+62 1. vae encode:  0.0002613067626953125
+2. dit inference:  0.20320582389831543
+3. vae decode:  0.2431011199951172
+63 1. vae encode:  0.000225067138671875
+2. dit inference:  0.2028191089630127
+3. vae decode:  0.24308037757873535
+64 1. vae encode:  0.0002205371856689453
+2. dit inference:  0.20264005661010742
+3. vae decode:  0.2429358959197998
+65 1. vae encode:  0.0001900196075439453
+2. dit inference:  0.20206952095031738
+3. vae decode:  0.24306488037109375

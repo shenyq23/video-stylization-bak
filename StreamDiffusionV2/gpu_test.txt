@@ -1,0 +1,112 @@
+(video) cjh@ubuntu-Super-Server:~/work/vedit/baseline/StreamDiffusionV2$ python3 gpu.py --config_path configs/wan_causal_dmd_v2v.yaml --checkpoint_folder ckpts/wan_causal_dmd_v2v --output_folder outputs/ --prompt_file_path prompt.txt --video_path ../../videos/bird.mp4 --height 480 --width 832 --fps 16 --step 4
+/home/cjh/anaconda3/envs/video/lib/python3.13/site-packages/torch/cuda/__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+/home/cjh/anaconda3/envs/video/lib/python3.13/site-packages/torch/cuda/__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+2025-12-23 22:14:07,619 - INFO - 成功初始化 NVML，监控 GPU 1.
+2025-12-23 22:14:07,630 - INFO - 正在初始化 CausalStreamInferencePipeline...
+2025-12-23 22:15:40,232 - INFO - loading wan_models/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth
+KV inference with 1 frames per block
+Text encoder is intentionally kept on CPU.
+2025-12-23 22:15:42,072 - INFO - 正在从 ckpts/wan_causal_dmd_v2v/model.pt 加载模型权重
+2025-12-23 22:15:46,612 - INFO - 模型加载完成。
+2025-12-23 22:15:46,613 - INFO - 正在从 ../../videos/bird.mp4 加载视频...
+2025-12-23 22:15:53,200 - INFO - 输入视频张量形状: torch.Size([1, 3, 254, 480, 832])
+2025-12-23 22:15:53,201 - INFO - 正在准备用于分析的真实输入数据和流水线状态...
+2025-12-23 22:16:04,824 - INFO - 流水线 'prepare' 和 VAE '预热解码' 已完成，所有内部状态均已正确初始化。
+2025-12-23 22:16:05,224 - INFO - 为 VAE 解码准备的 Latent 形状 (热循环模式): torch.Size([1, 1, 16, 60, 104])
+2025-12-23 22:16:05,224 - INFO - 所有模块的真实输入数据和状态准备就绪。
+2025-12-23 22:16:05,224 - INFO - 正在为 [VAE Encode (Real Data)] 进行预热...
+2025-12-23 22:16:05,760 - INFO - 开始分析 [VAE Encode (Real Data)]...
+2025-12-23 22:16:05,891 - INFO - [VAE Encode (Real Data)] 迭代 1/20: 耗时: 130.21 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:06,021 - INFO - [VAE Encode (Real Data)] 迭代 2/20: 耗时: 129.88 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:06,151 - INFO - [VAE Encode (Real Data)] 迭代 3/20: 耗时: 130.23 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:06,283 - INFO - [VAE Encode (Real Data)] 迭代 4/20: 耗时: 131.99 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:06,412 - INFO - [VAE Encode (Real Data)] 迭代 5/20: 耗时: 128.74 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:06,542 - INFO - [VAE Encode (Real Data)] 迭代 6/20: 耗时: 129.82 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:06,673 - INFO - [VAE Encode (Real Data)] 迭代 7/20: 耗时: 130.28 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:06,803 - INFO - [VAE Encode (Real Data)] 迭代 8/20: 耗时: 130.19 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:06,933 - INFO - [VAE Encode (Real Data)] 迭代 9/20: 耗时: 130.34 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:07,064 - INFO - [VAE Encode (Real Data)] 迭代 10/20: 耗时: 130.25 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:07,194 - INFO - [VAE Encode (Real Data)] 迭代 11/20: 耗时: 130.49 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:07,325 - INFO - [VAE Encode (Real Data)] 迭代 12/20: 耗时: 129.97 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:07,455 - INFO - [VAE Encode (Real Data)] 迭代 13/20: 耗时: 130.20 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:07,585 - INFO - [VAE Encode (Real Data)] 迭代 14/20: 耗时: 130.25 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:07,716 - INFO - [VAE Encode (Real Data)] 迭代 15/20: 耗时: 130.26 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:07,846 - INFO - [VAE Encode (Real Data)] 迭代 16/20: 耗时: 130.23 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:07,976 - INFO - [VAE Encode (Real Data)] 迭代 17/20: 耗时: 130.23 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:08,112 - INFO - [VAE Encode (Real Data)] 迭代 18/20: 耗时: 135.15 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:08,237 - INFO - [VAE Encode (Real Data)] 迭代 19/20: 耗时: 125.28 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:08,368 - INFO - [VAE Encode (Real Data)] 迭代 20/20: 耗时: 130.34 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+
+============================================================
+模块 [VAE Encode (Real Data)] 的性能总结
+============================================================
+在 20 次迭代中的平均耗时: 130.2162 ms
+执行期间的平均GPU占用率: 100.00%
+观测到的峰值GPU占用率: 100.00%
+============================================================
+
+2025-12-23 22:16:08,368 - INFO - 正在为 [DiT Inference (Real Data)] 进行预热...
+2025-12-23 22:16:09,580 - INFO - 开始分析 [DiT Inference (Real Data)]...
+2025-12-23 22:16:09,800 - INFO - [DiT Inference (Real Data)] 迭代 1/20: 耗时: 219.59 ms | 平均GPU占用: 86.0% | 峰值GPU占用: 86.0%
+2025-12-23 22:16:10,019 - INFO - [DiT Inference (Real Data)] 迭代 2/20: 耗时: 219.04 ms | 平均GPU占用: 86.0% | 峰值GPU占用: 86.0%
+2025-12-23 22:16:10,239 - INFO - [DiT Inference (Real Data)] 迭代 3/20: 耗时: 219.53 ms | 平均GPU占用: 86.0% | 峰值GPU占用: 86.0%
+2025-12-23 22:16:10,460 - INFO - [DiT Inference (Real Data)] 迭代 4/20: 耗时: 220.56 ms | 平均GPU占用: 87.3% | 峰值GPU占用: 90.0%
+2025-12-23 22:16:10,681 - INFO - [DiT Inference (Real Data)] 迭代 5/20: 耗时: 220.54 ms | 平均GPU占用: 90.0% | 峰值GPU占用: 90.0%
+2025-12-23 22:16:10,900 - INFO - [DiT Inference (Real Data)] 迭代 6/20: 耗时: 219.20 ms | 平均GPU占用: 90.0% | 峰值GPU占用: 90.0%
+2025-12-23 22:16:11,120 - INFO - [DiT Inference (Real Data)] 迭代 7/20: 耗时: 219.52 ms | 平均GPU占用: 90.0% | 峰值GPU占用: 90.0%
+2025-12-23 22:16:11,342 - INFO - [DiT Inference (Real Data)] 迭代 8/20: 耗时: 221.93 ms | 平均GPU占用: 90.0% | 峰值GPU占用: 90.0%
+2025-12-23 22:16:11,561 - INFO - [DiT Inference (Real Data)] 迭代 9/20: 耗时: 219.11 ms | 平均GPU占用: 85.4% | 峰值GPU占用: 90.0%
+2025-12-23 22:16:11,781 - INFO - [DiT Inference (Real Data)] 迭代 10/20: 耗时: 219.54 ms | 平均GPU占用: 84.0% | 峰值GPU占用: 84.0%
+2025-12-23 22:16:12,003 - INFO - [DiT Inference (Real Data)] 迭代 11/20: 耗时: 221.44 ms | 平均GPU占用: 84.0% | 峰值GPU占用: 84.0%
+2025-12-23 22:16:12,223 - INFO - [DiT Inference (Real Data)] 迭代 12/20: 耗时: 220.33 ms | 平均GPU占用: 84.0% | 峰值GPU占用: 84.0%
+2025-12-23 22:16:12,447 - INFO - [DiT Inference (Real Data)] 迭代 13/20: 耗时: 224.19 ms | 平均GPU占用: 85.3% | 峰值GPU占用: 89.0%
+2025-12-23 22:16:12,667 - INFO - [DiT Inference (Real Data)] 迭代 14/20: 耗时: 219.59 ms | 平均GPU占用: 89.0% | 峰值GPU占用: 89.0%
+2025-12-23 22:16:12,891 - INFO - [DiT Inference (Real Data)] 迭代 15/20: 耗时: 223.06 ms | 平均GPU占用: 89.0% | 峰值GPU占用: 89.0%
+2025-12-23 22:16:13,114 - INFO - [DiT Inference (Real Data)] 迭代 16/20: 耗时: 222.91 ms | 平均GPU占用: 89.0% | 峰值GPU占用: 89.0%
+2025-12-23 22:16:13,333 - INFO - [DiT Inference (Real Data)] 迭代 17/20: 耗时: 219.61 ms | 平均GPU占用: 89.0% | 峰值GPU占用: 89.0%
+2025-12-23 22:16:13,557 - INFO - [DiT Inference (Real Data)] 迭代 18/20: 耗时: 223.65 ms | 平均GPU占用: 87.5% | 峰值GPU占用: 89.0%
+2025-12-23 22:16:13,780 - INFO - [DiT Inference (Real Data)] 迭代 19/20: 耗时: 222.38 ms | 平均GPU占用: 87.0% | 峰值GPU占用: 87.0%
+2025-12-23 22:16:14,000 - INFO - [DiT Inference (Real Data)] 迭代 20/20: 耗时: 219.44 ms | 平均GPU占用: 87.0% | 峰值GPU占用: 87.0%
+
+============================================================
+模块 [DiT Inference (Real Data)] 的性能总结
+============================================================
+在 20 次迭代中的平均耗时: 220.7585 ms
+执行期间的平均GPU占用率: 87.27%
+观测到的峰值GPU占用率: 90.00%
+============================================================
+
+2025-12-23 22:16:14,000 - INFO - 正在为 [VAE Decode (Real Data)] 进行预热...
+2025-12-23 22:16:14,919 - INFO - 开始分析 [VAE Decode (Real Data)]...
+2025-12-23 22:16:15,145 - INFO - [VAE Decode (Real Data)] 迭代 1/20: 耗时: 225.57 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:15,369 - INFO - [VAE Decode (Real Data)] 迭代 2/20: 耗时: 223.97 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:15,593 - INFO - [VAE Decode (Real Data)] 迭代 3/20: 耗时: 224.29 ms | 平均GPU占用: 99.1% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:15,818 - INFO - [VAE Decode (Real Data)] 迭代 4/20: 耗时: 224.23 ms | 平均GPU占用: 99.0% | 峰值GPU占用: 99.0%
+2025-12-23 22:16:16,042 - INFO - [VAE Decode (Real Data)] 迭代 5/20: 耗时: 224.56 ms | 平均GPU占用: 99.0% | 峰值GPU占用: 99.0%
+2025-12-23 22:16:16,267 - INFO - [VAE Decode (Real Data)] 迭代 6/20: 耗时: 224.36 ms | 平均GPU占用: 99.0% | 峰值GPU占用: 99.0%
+2025-12-23 22:16:16,491 - INFO - [VAE Decode (Real Data)] 迭代 7/20: 耗时: 224.21 ms | 平均GPU占用: 99.5% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:16,716 - INFO - [VAE Decode (Real Data)] 迭代 8/20: 耗时: 224.49 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:16,940 - INFO - [VAE Decode (Real Data)] 迭代 9/20: 耗时: 224.26 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:17,165 - INFO - [VAE Decode (Real Data)] 迭代 10/20: 耗时: 224.45 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:17,390 - INFO - [VAE Decode (Real Data)] 迭代 11/20: 耗时: 224.68 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:17,614 - INFO - [VAE Decode (Real Data)] 迭代 12/20: 耗时: 224.30 ms | 平均GPU占用: 99.0% | 峰值GPU占用: 99.0%
+2025-12-23 22:16:17,839 - INFO - [VAE Decode (Real Data)] 迭代 13/20: 耗时: 224.20 ms | 平均GPU占用: 99.0% | 峰值GPU占用: 99.0%
+2025-12-23 22:16:18,063 - INFO - [VAE Decode (Real Data)] 迭代 14/20: 耗时: 224.34 ms | 平均GPU占用: 99.0% | 峰值GPU占用: 99.0%
+2025-12-23 22:16:18,288 - INFO - [VAE Decode (Real Data)] 迭代 15/20: 耗时: 224.40 ms | 平均GPU占用: 99.0% | 峰值GPU占用: 99.0%
+2025-12-23 22:16:18,512 - INFO - [VAE Decode (Real Data)] 迭代 16/20: 耗时: 224.29 ms | 平均GPU占用: 99.5% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:18,737 - INFO - [VAE Decode (Real Data)] 迭代 17/20: 耗时: 224.34 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:18,961 - INFO - [VAE Decode (Real Data)] 迭代 18/20: 耗时: 224.37 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:19,186 - INFO - [VAE Decode (Real Data)] 迭代 19/20: 耗时: 224.27 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+2025-12-23 22:16:19,410 - INFO - [VAE Decode (Real Data)] 迭代 20/20: 耗时: 224.62 ms | 平均GPU占用: 100.0% | 峰值GPU占用: 100.0%
+
+============================================================
+模块 [VAE Decode (Real Data)] 的性能总结
+============================================================
+在 20 次迭代中的平均耗时: 224.4105 ms
+执行期间的平均GPU占用率: 99.55%
+观测到的峰值GPU占用率: 100.00%
+============================================================
+
+2025-12-23 22:16:19,420 - INFO - NVML 已成功关闭。
