@@ -34,8 +34,16 @@ class OcclusionComputation:
         use_color=False,
         use_structure=False,
         combine_method='mean',  # 'mean', 'max', or 'sum'
+        geometry_threshold=None,
+        luminosity_threshold=None,
+        color_threshold=None,
+        structure_threshold=None,
     ):
         assert use_geometry or use_luminosity or use_color or use_structure
+        if use_geometry: assert geometry_threshold is not None
+        if use_luminosity: assert luminosity_threshold is not None
+        if use_color: assert color_threshold is not None
+        if use_structure: assert structure_threshold is not None
         assert combine_method in ['mean', 'max', 'sum'], f"Invalid combine_method: {combine_method}"
         self.use_geometry = use_geometry
         self.use_luminosity = use_luminosity
@@ -43,30 +51,25 @@ class OcclusionComputation:
         self.use_structure = use_structure
         self.combine_method = combine_method
 
-    @classmethod
-    def _geometry_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, alpha=0.01, beta=0.5):
+        self.geometry_threshold = geometry_threshold
+        self.luminosity_threshold = luminosity_threshold
+        self.color_threshold = color_threshold
+        self.structure_threshold = structure_threshold
+
+    @staticmethod
+    def geometry_error(src_frame, tgt_frame, forward_flow, backward_flow):
         # Compute continuous occlusion based on forward-backward consistency
         # Similar to forward_backward_consistency_check but returns continuous values
-        flow_mag = torch.norm(forward_flow, dim=1) + torch.norm(backward_flow, dim=1)  # [B, H, W]
-
         warped_bwd_flow = flow_warp(backward_flow, forward_flow)  # [B, 2, H, W]
         warped_fwd_flow = flow_warp(forward_flow, backward_flow)  # [B, 2, H, W]
 
         diff_fwd = torch.norm(forward_flow + warped_bwd_flow, dim=1)  # [B, H, W]
         diff_bwd = torch.norm(backward_flow + warped_fwd_flow, dim=1)
-
-        threshold = alpha * flow_mag + beta
-
-        # Convert to continuous [0, 1] using sigmoid-like function
-        # When diff is much larger than threshold, occlusion approaches 1
-        # When diff is much smaller than threshold, occlusion approaches 0
-        fwd_occ = torch.clamp(diff_fwd / (threshold + 1e-6), 0, 1)
-        bwd_occ = torch.clamp(diff_bwd / (threshold + 1e-6), 0, 1)
-
-        return fwd_occ, bwd_occ
-
-    @classmethod
-    def _luminosity_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, threshold=64.0):
+        
+        return diff_fwd, diff_bwd
+    
+    @staticmethod
+    def luminosity_error(src_frame, tgt_frame, forward_flow, backward_flow):
         # Forward occlusion: warp target with forward flow, compare to source
         warped_target = flow_warp(tgt_frame, forward_flow)
         forward_photo_error = torch.abs(src_frame - warped_target).mean(dim=1)  # [N, H, W]
@@ -74,16 +77,11 @@ class OcclusionComputation:
         # Backward occlusion: warp source with backward flow, compare to target
         warped_source = flow_warp(src_frame, backward_flow)
         backward_photo_error = torch.abs(tgt_frame - warped_source).mean(dim=1)  # [N, H, W]
+        
+        return forward_photo_error, backward_photo_error
 
-        # Normalize to [0, 1] range using sigmoid-like function
-        # threshold controls the sensitivity (default 64 = 255 * 0.25)
-        forward_occlusion = torch.clamp(forward_photo_error / threshold, 0, 1)
-        backward_occlusion = torch.clamp(backward_photo_error / threshold, 0, 1)
-
-        return forward_occlusion, backward_occlusion
-
-    @classmethod
-    def _color_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, threshold=64.0):
+    @staticmethod
+    def color_error(src_frame, tgt_frame, forward_flow, backward_flow):
         # Forward occlusion: warp target with forward flow, compare to source
         warped_target = flow_warp(tgt_frame, forward_flow)
         forward_color_error = torch.abs(src_frame - warped_target)  # [N, 3, H, W]
@@ -95,15 +93,11 @@ class OcclusionComputation:
         # Use max across channels for color sensitivity
         forward_color_error = forward_color_error.max(dim=1)[0]  # [N, H, W]
         backward_color_error = backward_color_error.max(dim=1)[0]  # [N, H, W]
+        
+        return forward_color_error, backward_color_error
 
-        # Normalize to [0, 1] range
-        forward_occlusion = torch.clamp(forward_color_error / threshold, 0, 1)
-        backward_occlusion = torch.clamp(backward_color_error / threshold, 0, 1)
-
-        return forward_occlusion, backward_occlusion
-
-    @classmethod
-    def _structure_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, threshold=50.0):
+    @staticmethod
+    def structure_error(src_frame, tgt_frame, forward_flow, backward_flow):
         def compute_gradients(img):
             # Compute image gradients using Sobel-like operators
             # img: [N, 3, H, W]
@@ -133,34 +127,47 @@ class OcclusionComputation:
         tgt_grad = compute_gradients(tgt_frame)
         warped_src_grad = compute_gradients(warped_source)
         backward_struct_error = torch.abs(tgt_grad - warped_src_grad).mean(dim=1)  # [N, H, W]
-
-        # Normalize to [0, 1] range
-        forward_occlusion = torch.clamp(forward_struct_error / threshold, 0, 1)
-        backward_occlusion = torch.clamp(backward_struct_error / threshold, 0, 1)
-
-        return forward_occlusion, backward_occlusion
+        
+        return forward_struct_error, backward_struct_error
 
     def __call__(self, src_frame, tgt_frame, forward_flow, backward_flow):
         forward_occlusion_components = []
         backward_occlusion_components = []
 
         if self.use_geometry:
-            forward_occ, backward_occ = OcclusionComputation._geometry_occlusion(src_frame, tgt_frame, forward_flow, backward_flow)
+            forward_error, backward_error = OcclusionComputation.geometry_error(src_frame, tgt_frame, forward_flow, backward_flow)
+            # Geometry uses gmflow's method: error > alpha * flow_mag + beta
+            # We convert this to continuous [0, 1] by normalizing with the threshold
+            flow_mag = torch.norm(forward_flow, dim=1) + torch.norm(backward_flow, dim=1)  # [B, H, W]
+            alpha, beta = self.geometry_threshold  # (alpha, beta) tuple
+            threshold_fwd = alpha * flow_mag + beta
+            threshold_bwd = alpha * flow_mag + beta
+            forward_occ = torch.clamp(forward_error / (threshold_fwd + 1e-6), 0, 1)
+            backward_occ = torch.clamp(backward_error / (threshold_bwd + 1e-6), 0, 1)
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
 
         if self.use_luminosity:
-            forward_occ, backward_occ = OcclusionComputation._luminosity_occlusion(src_frame, tgt_frame, forward_flow, backward_flow)
+            forward_error, backward_error = OcclusionComputation.luminosity_error(src_frame, tgt_frame, forward_flow, backward_flow)
+            # Luminosity: normalize by fixed threshold
+            forward_occ = torch.clamp(forward_error / self.luminosity_threshold, 0, 1)
+            backward_occ = torch.clamp(backward_error / self.luminosity_threshold, 0, 1)
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
 
         if self.use_color:
-            forward_occ, backward_occ = OcclusionComputation._color_occlusion(src_frame, tgt_frame, forward_flow, backward_flow)
+            forward_error, backward_error = OcclusionComputation.color_error(src_frame, tgt_frame, forward_flow, backward_flow)
+            # Color: normalize by fixed threshold
+            forward_occ = torch.clamp(forward_error / self.color_threshold, 0, 1)
+            backward_occ = torch.clamp(backward_error / self.color_threshold, 0, 1)
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
 
         if self.use_structure:
-            forward_occ, backward_occ = OcclusionComputation._structure_occlusion(src_frame, tgt_frame, forward_flow, backward_flow)
+            forward_error, backward_error = OcclusionComputation.structure_error(src_frame, tgt_frame, forward_flow, backward_flow)
+            # Structure: normalize by fixed threshold
+            forward_occ = torch.clamp(forward_error / self.structure_threshold, 0, 1)
+            backward_occ = torch.clamp(backward_error / self.structure_threshold, 0, 1)
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
 
