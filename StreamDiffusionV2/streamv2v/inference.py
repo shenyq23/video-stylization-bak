@@ -46,7 +46,7 @@ import torchvision
 import torchvision.transforms.functional as TF
 from einops import rearrange
 
-from calflow.utils.optical_wrapper import GMFlowWrapper, RAFTFlowWrapper
+from utils.optical_wrapper import GMFlowWrapper, RAFTFlowWrapper
 import cv2
 
 class OpticalFlowCalculator:

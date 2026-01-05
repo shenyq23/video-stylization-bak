@@ -1,6 +1,0 @@
-[submodule "deps/gmflow"]
-	path = deps/gmflow
-	url = git@github.com:haofeixu/gmflow.git
-[submodule "deps/RAFT"]
-	path = deps/RAFT
-	url = git@github.com:princeton-vl/RAFT.git

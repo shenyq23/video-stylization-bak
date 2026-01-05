@@ -1,7 +1,0 @@
-torch
-numpy
-opencv-python
-matplotlib
-imageio
-pandas
-imageio-ffmpeg
