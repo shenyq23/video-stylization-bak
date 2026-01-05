@@ -14,7 +14,7 @@ sys.path.append("../deps/gmflow")
 
 from utils.x265_wrapper import X265EncoderWrapper
 from gmflow.gmflow import GMFlow
-from gmflow.geometry import flow_warp, forward_backward_consistency_check
+from gmflow.geometry import flow_warp
 
 # disable RAFT
 # from deps.RAFT.core.raft import RAFT
@@ -32,49 +32,77 @@ class OcclusionComputation:
         use_luminosity=False,
         use_color=False,
         use_structure=False,
+        combine_method='mean',  # 'mean', 'max', or 'sum'
     ):
         assert use_geometry or use_luminosity or use_color or use_structure
+        assert combine_method in ['mean', 'max', 'sum'], f"Invalid combine_method: {combine_method}"
         self.use_geometry = use_geometry
         self.use_luminosity = use_luminosity
         self.use_color = use_color
         self.use_structure = use_structure
+        self.combine_method = combine_method
 
     @classmethod
-    def _geometry_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow):
-        return forward_backward_consistency_check(forward_flow, backward_flow)
+    def _geometry_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, alpha=0.01, beta=0.5):
+        # Compute continuous occlusion based on forward-backward consistency
+        # Similar to forward_backward_consistency_check but returns continuous values
+        flow_mag = torch.norm(forward_flow, dim=1) + torch.norm(backward_flow, dim=1)  # [B, H, W]
+
+        warped_bwd_flow = flow_warp(backward_flow, forward_flow)  # [B, 2, H, W]
+        warped_fwd_flow = flow_warp(forward_flow, backward_flow)  # [B, 2, H, W]
+
+        diff_fwd = torch.norm(forward_flow + warped_bwd_flow, dim=1)  # [B, H, W]
+        diff_bwd = torch.norm(backward_flow + warped_fwd_flow, dim=1)
+
+        threshold = alpha * flow_mag + beta
+        
+        # Convert to continuous [0, 1] using sigmoid-like function
+        # When diff is much larger than threshold, occlusion approaches 1
+        # When diff is much smaller than threshold, occlusion approaches 0
+        fwd_occ = torch.clamp(diff_fwd / (threshold + 1e-6), 0, 1)
+        bwd_occ = torch.clamp(diff_bwd / (threshold + 1e-6), 0, 1)
+        
+        return fwd_occ, bwd_occ
     
     @classmethod
-    def _luminosity_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow):
+    def _luminosity_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, threshold=64.0):
         # Forward occlusion: warp target with forward flow, compare to source
         warped_target = flow_warp(tgt_frame, forward_flow)
         forward_photo_error = torch.abs(src_frame - warped_target).mean(dim=1)  # [N, H, W]
-        forward_occlusion = (forward_photo_error > 255 * 0.25).float()
         
         # Backward occlusion: warp source with backward flow, compare to target
         warped_source = flow_warp(src_frame, backward_flow)
         backward_photo_error = torch.abs(tgt_frame - warped_source).mean(dim=1)  # [N, H, W]
-        backward_occlusion = (backward_photo_error > 255 * 0.25).float()
+        
+        # Normalize to [0, 1] range using sigmoid-like function
+        # threshold controls the sensitivity (default 64 = 255 * 0.25)
+        forward_occlusion = torch.clamp(forward_photo_error / threshold, 0, 1)
+        backward_occlusion = torch.clamp(backward_photo_error / threshold, 0, 1)
         
         return forward_occlusion, backward_occlusion
 
     @classmethod
-    def _color_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow):
+    def _color_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, threshold=64.0):
         # Forward occlusion: warp target with forward flow, compare to source
         warped_target = flow_warp(tgt_frame, forward_flow)
         forward_color_error = torch.abs(src_frame - warped_target)  # [N, 3, H, W]
-        # Check if any channel exceeds threshold
-        forward_occlusion = (forward_color_error.max(dim=1)[0] > 255 * 0.25).float()  # [N, H, W]
         
         # Backward occlusion: warp source with backward flow, compare to target
         warped_source = flow_warp(src_frame, backward_flow)
         backward_color_error = torch.abs(tgt_frame - warped_source)  # [N, 3, H, W]
-        # Check if any channel exceeds threshold
-        backward_occlusion = (backward_color_error.max(dim=1)[0] > 255 * 0.25).float()  # [N, H, W]
+        
+        # Use max across channels for color sensitivity
+        forward_color_error = forward_color_error.max(dim=1)[0]  # [N, H, W]
+        backward_color_error = backward_color_error.max(dim=1)[0]  # [N, H, W]
+        
+        # Normalize to [0, 1] range
+        forward_occlusion = torch.clamp(forward_color_error / threshold, 0, 1)
+        backward_occlusion = torch.clamp(backward_color_error / threshold, 0, 1)
         
         return forward_occlusion, backward_occlusion
 
     @classmethod
-    def _structure_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow):
+    def _structure_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, threshold=50.0):
         def compute_gradients(img):
             # Compute image gradients using Sobel-like operators
             # img: [N, 3, H, W]
@@ -98,14 +126,16 @@ class OcclusionComputation:
         src_grad = compute_gradients(src_frame)
         warped_tgt_grad = compute_gradients(warped_target)
         forward_struct_error = torch.abs(src_grad - warped_tgt_grad).mean(dim=1)  # [N, H, W]
-        forward_occlusion = (forward_struct_error > 50).float()  # threshold for gradient difference
         
         # Backward occlusion: compare gradients of target and warped source
         warped_source = flow_warp(src_frame, backward_flow)
         tgt_grad = compute_gradients(tgt_frame)
         warped_src_grad = compute_gradients(warped_source)
         backward_struct_error = torch.abs(tgt_grad - warped_src_grad).mean(dim=1)  # [N, H, W]
-        backward_occlusion = (backward_struct_error > 50).float()  # threshold for gradient difference
+        
+        # Normalize to [0, 1] range
+        forward_occlusion = torch.clamp(forward_struct_error / threshold, 0, 1)
+        backward_occlusion = torch.clamp(backward_struct_error / threshold, 0, 1)
         
         return forward_occlusion, backward_occlusion
 
@@ -133,10 +163,20 @@ class OcclusionComputation:
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
         
-        # Sum and clamp the occlusion components to [0, 1]
+        # Combine occlusion components based on combine_method
         if len(forward_occlusion_components) > 0:
-            combined_forward_occlusion = torch.clamp(torch.stack(forward_occlusion_components, dim=0).sum(dim=0), 0, 1)
-            combined_backward_occlusion = torch.clamp(torch.stack(backward_occlusion_components, dim=0).sum(dim=0), 0, 1)
+            forward_stack = torch.stack(forward_occlusion_components, dim=0)
+            backward_stack = torch.stack(backward_occlusion_components, dim=0)
+            
+            if self.combine_method == 'mean':
+                combined_forward_occlusion = forward_stack.mean(dim=0)
+                combined_backward_occlusion = backward_stack.mean(dim=0)
+            elif self.combine_method == 'max':
+                combined_forward_occlusion = forward_stack.max(dim=0)[0]
+                combined_backward_occlusion = backward_stack.max(dim=0)[0]
+            elif self.combine_method == 'sum':
+                combined_forward_occlusion = torch.clamp(forward_stack.sum(dim=0), 0, 1)
+                combined_backward_occlusion = torch.clamp(backward_stack.sum(dim=0), 0, 1)
         else:
             # This shouldn't happen due to the assert in __init__
             combined_forward_occlusion = torch.zeros_like(forward_flow[:, 0])
@@ -319,7 +359,7 @@ class RAFTFlowWrapper(OpticalFlowWrapper):
             return [forward_flows, backward_flows], np.mean(elapsed_times) * 1000
 
 class X265MVWrapper(OpticalFlowWrapper):
-    def __init__(self, device, encoder_path="/home/holder/video-stylization/bin/x265"):
+    def __init__(self, device, encoder_path=None):
         super().__init__(device)
         self.encoder = X265EncoderWrapper(encoder_path)
 

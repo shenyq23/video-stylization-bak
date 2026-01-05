@@ -2,8 +2,11 @@ import os
 from utils.command import Command
 
 class X265EncoderWrapper:
-    def __init__(self, encoder_path="/home/holder/video-stylization/bin/x265"):
-        self.encoder_path = encoder_path
+    def __init__(self, encoder_path=None):
+        if encoder_path is None:
+            self.encoder_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "x265")
+        else:
+            self.encoder_path = encoder_path
 
     def encode(
         self,

@@ -171,6 +171,7 @@ def main(args):
             use_luminosity=args.use_luminosity,
             use_color=args.use_color,
             use_structure=args.use_structure,
+            combine_method=args.occlusion_combine_method,
         )
         
         # Use warping flows for final output
@@ -344,6 +345,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_luminosity", action="store_true", help="Use luminosity-based occlusion detection (photometric check with mean)")
     parser.add_argument("--use_color", action="store_true", help="Use color-based occlusion detection (per-channel photometric check)")
     parser.add_argument("--use_structure", action="store_true", help="Use structure-based occlusion detection (gradient-based check)")
+    parser.add_argument("--occlusion_combine_method", type=str, default="mean", choices=["mean", "max", "sum"], help="Method to combine multiple occlusion components: mean (average), max (union), or sum (clamped sum)")
     parser.add_argument("--write_diff", action="store_true", help="Write a per-frame difference visualization between stylized and output")
     parser.add_argument("--diff_mode", type=str, default="heatmap", choices=["abs_rgb", "abs_gray", "heatmap"], help="Diff visualization mode")
     parser.add_argument("--diff_amplify", type=float, default=4.0, help="Amplify factor for diff (e.g., 4.0 makes small differences more visible)")
