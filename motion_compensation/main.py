@@ -145,6 +145,10 @@ def main(args):
         flow_model = FlowModelClass(args.device)
         ref_frame_idx_list = [0] + [(i - 1) // args.batch_size * args.batch_size for i in range(1, len(frames))]
 
+        native_x265 = getattr(args, 'native_x265', False)
+        if args.flow_model == "x265" or args.flow_model == "mix":
+            flow_model = FlowModelClass(args.device, native_x265=native_x265)
+
         # Compute optical flow for warping
         if args.flow_model == "x265" or args.flow_model == "mix":
             flows, _ = flow_model.compute_flow(frames, ref_frame_idx_list, size=size, frame_rate=fps, **x265_params)
@@ -153,7 +157,10 @@ def main(args):
 
         # Compute optical flow for occlusion (if using mix/reverse_mix)
         if args.flow_model == "mix" or args.flow_model == "reverse_mix":
-            occlusion_flow_model = OcclusionFlowModelClass(args.device)
+            if args.flow_model == "reverse_mix":
+                occlusion_flow_model = OcclusionFlowModelClass(args.device, native_x265=native_x265)
+            else:
+                occlusion_flow_model = OcclusionFlowModelClass(args.device)
             if args.flow_model == "reverse_mix":
                 # reverse_mix: occlusion uses x265
                 occlusion_flows, _ = occlusion_flow_model.compute_flow(frames, ref_frame_idx_list, size=size, frame_rate=fps, **x265_params)
@@ -308,6 +315,7 @@ def run_motion_compensation(**kwargs):
         "write_diff": False,
         "diff_mode": "heatmap",
         "diff_amplify": 4.0,
+        "native_x265": False,  # Use native zero-IO x265 mode
     }
 
     # Check required arguments
@@ -351,6 +359,7 @@ if __name__ == "__main__":
     parser.add_argument("--write_diff", action="store_true", help="Write a per-frame difference visualization between stylized and output")
     parser.add_argument("--diff_mode", type=str, default="heatmap", choices=["abs_rgb", "abs_gray", "heatmap"], help="Diff visualization mode")
     parser.add_argument("--diff_amplify", type=float, default=4.0, help="Amplify factor for diff (e.g., 4.0 makes small differences more visible)")
+    parser.add_argument("--native_x265", action="store_true", help="Use native zero-IO x265 mode (eliminates file I/O for ~2.4x speedup)")
 
     args = parser.parse_args()
     main(args)

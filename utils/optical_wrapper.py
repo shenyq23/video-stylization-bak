@@ -360,9 +360,17 @@ class RAFTFlowWrapper(OpticalFlowWrapper):
             return [forward_flows, backward_flows], np.mean(elapsed_times) * 1000
 
 class X265MVWrapper(OpticalFlowWrapper):
-    def __init__(self, device, encoder_path=None):
+    def __init__(self, device, encoder_path=None, native_x265=False):
+        """
+            encoder_path: path to x265 encoder (for CSV mode)
+        """
         super().__init__(device)
-        self.encoder = X265EncoderWrapper(encoder_path)
+        self.native_x265 = native_x265
+        if native_x265:
+            from utils.x265_native import X265NativeWrapper
+            self.native_wrapper = X265NativeWrapper(device=device)
+        else:
+            self.encoder = X265EncoderWrapper(encoder_path)
 
     @staticmethod
     def _update_flow(flow_log_path, flows_ref, ref_idx, granularity):
@@ -394,9 +402,14 @@ class X265MVWrapper(OpticalFlowWrapper):
 
     def compute_flow(self, frames, ref_frame_idx_list, **kwargs):
         """
-        - kwargs should contain all the encoding params and the stage whose log will be used
-        - by default, we use encoding log and the granularity should be 4x4
+            frames: List of BGR frames
+            ref_frame_idx_list: Reference frame indices
+            **kwargs: Encoding parameters
         """
+        # zero-IO native x265 mode first
+        if self.native_x265:
+            return self.native_wrapper.compute_flow(frames, ref_frame_idx_list, **kwargs)
+
         width = int(kwargs["size"].split("x")[0])
         height = int(kwargs["size"].split("x")[1])
         forward_flows = np.zeros((len(frames), 2, height, width), dtype=np.float32)
