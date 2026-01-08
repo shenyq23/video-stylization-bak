@@ -226,6 +226,9 @@ class X265NativeWrapper:
         width, height = map(int, size_str.split('x'))
         fps = kwargs.get('fps', 30)
         preset = kwargs.get('preset', 'medium')
+        stage = kwargs.get('stage', 'lookahead')
+        if stage not in ['lookahead', 'encode']:
+            raise ValueError(f"Invalid stage: {stage}. Must be 'lookahead' or 'encode'")
 
         num_frames = len(frames)
 
@@ -244,7 +247,7 @@ class X265NativeWrapper:
                 # This produces motion from ref_frame -> current_frame
                 flow = self._encode_frame_pair(
                     frames[ref_idx], frames[idx],
-                    width, height, fps, preset
+                    width, height, fps, preset, stage
                 )
 
                 flow_tensor = torch.from_numpy(flow).to(self.device)
@@ -264,7 +267,7 @@ class X265NativeWrapper:
 
         return [forward_flows, backward_flows], None
 
-    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset):
+    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset, stage='lookahead'):
         if frame0.shape[:2] != (height, width):
             frame0 = cv2.resize(frame0, (width, height))
         if frame1.shape[:2] != (height, width):
