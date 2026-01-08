@@ -232,8 +232,8 @@ class X265NativeWrapper:
 
         num_frames = len(frames)
 
-        forward_flows = [None] * num_frames
-        backward_flows = [None] * num_frames
+        forward_flows = torch.zeros((num_frames, 2, height, width), device=self.device, dtype=torch.float32)
+        backward_flows = torch.zeros((num_frames, 2, height, width), device=self.device, dtype=torch.float32)
 
         # loop frame pair
         for idx in range(num_frames):
@@ -258,12 +258,6 @@ class X265NativeWrapper:
                 elif ref_idx > idx:
                     # ref_idx -> idx: this is forward flow for frame idx
                     forward_flows[idx] = flow_tensor
-
-        for i in range(num_frames):
-            if forward_flows[i] is None:
-                forward_flows[i] = torch.zeros((2, height, width), device=self.device)
-            if backward_flows[i] is None:
-                backward_flows[i] = torch.zeros((2, height, width), device=self.device)
 
         return [forward_flows, backward_flows], None
 
