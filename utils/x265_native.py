@@ -331,16 +331,33 @@ class X265NativeWrapper:
         self.close()
 
     def compute_flow(self, frames, ref_frame_idx_list, **kwargs):
+        import time
+
         # Parse parameters
         size_str = kwargs.get('size', f"{frames[0].shape[1]}x{frames[0].shape[0]}")
         width, height = map(int, size_str.split('x'))
         fps = kwargs.get('fps', 30)
         preset = kwargs.get('preset', 'medium')
         stage = kwargs.get('stage', 'lookahead')
+        enable_profile = kwargs.get('profile', False)
         if stage not in ['lookahead', 'encode']:
             raise ValueError(f"Invalid stage: {stage}. Must be 'lookahead' or 'encode'")
 
         num_frames = len(frames)
+
+        # Initialize profiling data
+        profile_data = None
+        if enable_profile:
+            profile_data = {
+                'yuv_conversion': [],       # RGB→YUV conversion time
+                'encoder_open': [],         # encoder open/reset time
+                'struct_filling': [],       # x265_picture filling time
+                'x265_encode_call': [],     # x265_encoder_encode() call time
+                'encoder_flush': [],        # encoder flush time
+                'flow_copy': [],            # flow np.copy time
+                'tensor_conversion': [],    # numpy→torch + to(device) time
+                'total_per_pair': []        # Total time per frame pair
+            }
 
         forward_flows = torch.zeros((num_frames, 2, height, width), device=self.device, dtype=torch.float32)
         backward_flows = torch.zeros((num_frames, 2, height, width), device=self.device, dtype=torch.float32)
@@ -355,12 +372,22 @@ class X265NativeWrapper:
 
                 # Encode frame pair: [ref_frame, current_frame]
                 # This produces motion from ref_frame -> current_frame
+                t_pair_start = time.perf_counter() if enable_profile else None
+
                 flow = self._encode_frame_pair(
                     frames[ref_idx], frames[idx],
-                    width, height, fps, preset, stage
+                    width, height, fps, preset, stage,
+                    profile_data=profile_data
                 )
 
+                if enable_profile:
+                    profile_data['total_per_pair'].append(time.perf_counter() - t_pair_start)
+
+                # Tensor conversion timing
+                t_tensor_start = time.perf_counter() if enable_profile else None
                 flow_tensor = torch.from_numpy(flow).to(self.device)
+                if enable_profile:
+                    profile_data['tensor_conversion'].append(time.perf_counter() - t_tensor_start)
 
                 if ref_idx < idx:
                     # ref_idx -> idx: this is backward flow for frame idx
@@ -369,27 +396,95 @@ class X265NativeWrapper:
                     # ref_idx -> idx: this is forward flow for frame idx
                     forward_flows[idx] = flow_tensor
 
+        # Print profiling summary
+        if enable_profile and profile_data['total_per_pair']:
+            self._print_profile_summary(profile_data, stage, width, height)
+
         return [forward_flows, backward_flows], None
 
-    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset, stage='lookahead'):
+    def _print_profile_summary(self, profile_data, stage, width, height):
+        print("\n" + "="*70)
+        print("X265 Native Wrapper - Performance Profiling")
+        print("="*70)
+        print(f"Stage: {stage}")
+        print(f"Resolution: {width}x{height}")
+        print(f"Frame pairs processed: {len(profile_data['total_per_pair'])}")
+        print("\nPer-frame-pair timing breakdown:")
+        print(f"  1. YUV conversion:      {np.mean(profile_data['yuv_conversion'])*1000:7.2f}ms  (RGB→YUV I420)")
+        print(f"  2. Encoder open/reset:  {np.mean(profile_data['encoder_open'])*1000:7.2f}ms  (first: open, rest: reset)")
+        print(f"  3. Struct filling:      {np.mean(profile_data['struct_filling'])*1000:7.2f}ms  (x265_picture setup)")
+        print(f"  4. X265 encode calls:   {np.mean(profile_data['x265_encode_call'])*1000:7.2f}ms  (2x x265_encoder_encode)")
+        print(f"  5. Encoder flush:       {np.mean(profile_data['encoder_flush'])*1000:7.2f}ms  (x265_encoder_encode NULL)")
+        print(f"  6. Flow copy:           {np.mean(profile_data['flow_copy'])*1000:7.2f}ms  (np.copy)")
+        print(f"  7. Tensor conversion:   {np.mean(profile_data['tensor_conversion'])*1000:7.2f}ms  (numpy→torch + to(device))")
+        print(f"  " + "-"*60)
+        print(f"  Total per pair:         {np.mean(profile_data['total_per_pair'])*1000:7.2f}ms  ± {np.std(profile_data['total_per_pair'])*1000:.2f}ms")
+
+        print(f"\nPerformance analysis:")
+        total_mean = np.mean(profile_data['total_per_pair'])
+        encode_time = np.mean(profile_data['x265_encode_call']) + np.mean(profile_data['encoder_flush'])
+        encoder_open_reset = np.mean(profile_data['encoder_open'])
+        x265_total = encode_time + encoder_open_reset
+        overhead = (np.mean(profile_data['yuv_conversion']) +
+                   np.mean(profile_data['struct_filling']) +
+                   np.mean(profile_data['flow_copy']) +
+                   np.mean(profile_data['tensor_conversion']))
+
+        print(f"  X265 encoding (encode+flush):   {encode_time*1000:7.2f}ms ({encode_time/total_mean*100:.1f}%)")
+        print(f"  Encoder open/reset:             {encoder_open_reset*1000:7.2f}ms ({encoder_open_reset/total_mean*100:.1f}%)")
+        print(f"  Total X265 time:                {x265_total*1000:7.2f}ms ({x265_total/total_mean*100:.1f}%)")
+        print(f"  Python/ctypes overhead:         {overhead*1000:7.2f}ms ({overhead/total_mean*100:.1f}%)")
+        print("="*70 + "\n")
+
+    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset, stage='lookahead', profile_data=None):
+        import time
+
+        # Resize frames if needed
         if frame0.shape[:2] != (height, width):
             frame0 = cv2.resize(frame0, (width, height))
         if frame1.shape[:2] != (height, width):
             frame1 = cv2.resize(frame1, (width, height))
 
-        # Convert BGR to YUV I420
+        # 1. Convert BGR to YUV I420
+        t_yuv_start = time.perf_counter() if profile_data is not None else None
         yuv0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2YUV_I420)
         yuv1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2YUV_I420)
+        if profile_data is not None:
+            profile_data['yuv_conversion'].append(time.perf_counter() - t_yuv_start)
 
+        # 2. Get or create encoder (reuse with reset)
+        t_open_start = time.perf_counter() if profile_data is not None else None
         encoder, collector = self._get_or_create_encoder(width, height, fps, preset, stage)
+        if profile_data is not None:
+            profile_data['encoder_open'].append(time.perf_counter() - t_open_start)
 
-        self._encode_yuv_frame(encoder, yuv0, width, height, 0)
-        self._encode_yuv_frame(encoder, yuv1, width, height, 1)
+        # 3. Encode both frames
+        t_encode_start = time.perf_counter() if profile_data is not None else None
+        self._encode_yuv_frame(encoder, yuv0, width, height, 0, profile_data)
+        self._encode_yuv_frame(encoder, yuv1, width, height, 1, profile_data)
+        if profile_data is not None:
+            profile_data['x265_encode_call'].append(time.perf_counter() - t_encode_start)
+
+        # 4. Flush encoder
+        t_flush_start = time.perf_counter() if profile_data is not None else None
         self._flush_encoder(encoder)
+        if profile_data is not None:
+            profile_data['encoder_flush'].append(time.perf_counter() - t_flush_start)
 
-        return collector.get_flow(1)
+        # 6. Get flow (copy)
+        t_copy_start = time.perf_counter() if profile_data is not None else None
+        flow = collector.get_flow(1)
+        if profile_data is not None:
+            profile_data['flow_copy'].append(time.perf_counter() - t_copy_start)
 
-    def _encode_yuv_frame(self, encoder, yuv_data, width, height, poc):
+        return flow
+
+    def _encode_yuv_frame(self, encoder, yuv_data, width, height, poc, profile_data=None):
+        import time
+
+        # 3a. Allocate and fill x265_picture struct
+        t_struct_start = time.perf_counter() if profile_data is not None else None
+
         pic = encoder.lib.x265_picture_alloc()
         if not pic:
             raise RuntimeError("Failed to allocate x265_picture")
@@ -417,6 +512,10 @@ class X265NativeWrapper:
 
             pic_struct.poc = poc
 
+            if profile_data is not None:
+                profile_data['struct_filling'].append(time.perf_counter() - t_struct_start)
+
+            # 3b. Call x265_encoder_encode
             pp_nal = c_void_p()
             pi_nal = c_uint32()
             ret = encoder.lib.x265_encoder_encode(
