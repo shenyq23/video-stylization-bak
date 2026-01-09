@@ -198,6 +198,10 @@ class X265NativeEncoder:
         lib.x265_encoder_close.restype = None
         lib.x265_encoder_close.argtypes = [c_void_p]
 
+        # x265_encoder_reset function
+        lib.x265_encoder_reset.restype = c_int
+        lib.x265_encoder_reset.argtypes = [c_void_p]
+
         # x265_picture_* functions
         lib.x265_picture_alloc.restype = c_void_p
         lib.x265_picture_alloc.argtypes = []
@@ -258,6 +262,14 @@ class X265NativeEncoder:
 
         return True
 
+    def reset_encoder(self):
+        if not self.encoder:
+            raise RuntimeError("Encoder not open")
+        ret = self.lib.x265_encoder_reset(self.encoder)
+        if ret < 0:
+            raise RuntimeError(f"Failed to reset encoder, return code: {ret}")
+        return True
+
     def close_encoder(self):
         if self.encoder:
             self.lib.x265_encoder_close(self.encoder)
@@ -274,6 +286,49 @@ class X265NativeWrapper:
     def __init__(self, device='cuda', lib_path=None):
         self.device = device
         self.lib_path = lib_path
+
+        # cached encoder
+        self._encoder = None
+        self._encoder_config = None
+        self._collector = None
+
+    def _get_or_create_encoder(self, width, height, fps, preset, stage):
+        config = (width, height, fps, preset, stage)
+
+        # reset if config changed
+        if self._encoder is not None and self._encoder_config == config:
+            self._encoder.reset_encoder()
+            self._collector.reset()
+            return self._encoder, self._collector
+
+        # close old if exists
+        if self._encoder is not None:
+            self._encoder.close_encoder()
+
+        # create new
+        self._collector = MVCollector(width, height)
+        self._encoder = X265NativeEncoder(self.lib_path)
+        self._encoder.open_encoder(
+            width, height, fps,
+            preset=preset,
+            tune='zerolatency',
+            frame_callback=self._collector.frame_callback,
+            stage=stage,
+            frames=2
+        )
+        self._encoder_config = config
+
+        return self._encoder, self._collector
+
+    def close(self):
+        if self._encoder is not None:
+            self._encoder.close_encoder()
+            self._encoder = None
+            self._encoder_config = None
+            self._collector = None
+
+    def __del__(self):
+        self.close()
 
     def compute_flow(self, frames, ref_frame_idx_list, **kwargs):
         # Parse parameters
@@ -326,25 +381,11 @@ class X265NativeWrapper:
         yuv0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2YUV_I420)
         yuv1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2YUV_I420)
 
-        collector = MVCollector(width, height)
+        encoder, collector = self._get_or_create_encoder(width, height, fps, preset, stage)
 
-        encoder = X265NativeEncoder(self.lib_path)
-        encoder.open_encoder(
-            width, height, fps,
-            preset=preset,
-            tune='zerolatency',
-            frame_callback=collector.frame_callback,
-            stage=stage,
-            frames=2
-        )
-
-        try:
-            self._encode_yuv_frame(encoder, yuv0, width, height, 0)
-            self._encode_yuv_frame(encoder, yuv1, width, height, 1)
-
-            self._flush_encoder(encoder)
-        finally:
-            encoder.close_encoder()
+        self._encode_yuv_frame(encoder, yuv0, width, height, 0)
+        self._encode_yuv_frame(encoder, yuv1, width, height, 1)
+        self._flush_encoder(encoder)
 
         return collector.get_flow(1)
 
