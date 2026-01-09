@@ -5,7 +5,7 @@ import cv2
 import torch
 from pathlib import Path
 from ctypes import CDLL, CFUNCTYPE, Structure, POINTER
-from ctypes import c_int, c_uint, c_uint8, c_uint32, c_uint64, c_float, c_double, c_void_p, c_char_p
+from ctypes import c_int, c_uint, c_uint8, c_uint32, c_uint64, c_longlong, c_float, c_double, c_void_p, c_char_p
 
 
 # void (*callback)(int poc, int x, int y, int w, int h,
@@ -34,22 +34,29 @@ class x265_nal(Structure):
 
 
 class x265_picture(Structure):
-    """x265 picture structure for frame data input, minimal fields needed for encoding.
+    """
+    Must match x265's x265_picture deps/x265/source/x265.h
     """
     _fields_ = [
-        # Frame data planes
-        ("planes", POINTER(c_void_p) * 3),  # Y=planes[0], U=planes[1], V=planes[2]
-        ("stride", c_int * 3),
+        # Timestamps
+        ("pts", c_longlong),      # int64_t pts
+        ("dts", c_longlong),      # int64_t dts
+
+        ("vbvEndFlag", c_int),
+        ("userData", c_void_p),
+
+        # Frame data planes (4 planes for RGBA support, we use 3 for I420: Y, U, V)
+        ("planes", c_void_p * 4),
+        ("stride", c_int * 4),
 
         # Picture parameters
         ("bitDepth", c_int),
         ("sliceType", c_int),
         ("poc", c_int),
-        ("pts", c_uint64),
-        ("dts", c_uint64),
         ("colorSpace", c_int),
 
-        # We can add more fields if needed, but these are sufficient for basic encoding
+        # Note: x265_picture has many more fields
+        # but these are the critical ones for basic encoding
     ]
 
 
