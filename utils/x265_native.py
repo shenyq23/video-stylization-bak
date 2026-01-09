@@ -8,6 +8,7 @@ from ctypes import CDLL, CFUNCTYPE, Structure, POINTER
 from ctypes import c_int, c_uint, c_uint8, c_uint32, c_uint64, c_longlong, c_float, c_double, c_void_p, c_char_p
 
 
+# Per-block callback
 # void (*callback)(int poc, int x, int y, int w, int h,
 #                  float mvx, float mvy, int deltapoc, void* user_data)
 MV_CALLBACK_FUNC = CFUNCTYPE(
@@ -21,6 +22,19 @@ MV_CALLBACK_FUNC = CFUNCTYPE(
     c_float,  # mvy
     c_int,    # deltapoc
     c_void_p  # user_data
+)
+
+# Per-frame callback
+MV_FRAME_CALLBACK_FUNC = CFUNCTYPE(
+    None,
+    c_int,              # poc
+    c_int,              # width
+    c_int,              # height
+    c_int,              # block_size
+    POINTER(c_float),   # mvx_array
+    POINTER(c_float),   # mvy_array
+    POINTER(c_int),     # deltapoc_array
+    c_void_p            # user_data
 )
 
 
@@ -68,7 +82,7 @@ class MVCollector:
         self.flow = np.zeros((2, height, width), dtype=np.float32)
         self.callback_count = 0
 
-    def callback(self, poc, x, y, w, h, mvx, mvy, deltapoc, user_data):
+    def block_callback(self, poc, x, y, w, h, mvx, mvy, deltapoc, user_data):
         if poc == 0:
             return
 
@@ -84,6 +98,37 @@ class MVCollector:
         self.flow[1, y:y_end, x:x_end] = mvy
 
         self.callback_count += 1
+
+    def frame_callback(self, poc, width, height, block_size, mvx_ptr, mvy_ptr, deltapoc_ptr, user_data):
+        if poc == 0:
+            return
+
+        # block_size (16 or 4)
+        blocks_x = (width + block_size - 1) // block_size
+        blocks_y = (height + block_size - 1) // block_size
+        num_blocks = blocks_x * blocks_y
+
+        # numpy view from C pointers
+        mvx_arr = np.ctypeslib.as_array(mvx_ptr, shape=(num_blocks,))
+        mvy_arr = np.ctypeslib.as_array(mvy_ptr, shape=(num_blocks,))
+
+        # Pre-compute row/col indices for each pixel
+        row_idx = np.arange(self.height) // block_size
+        col_idx = np.arange(self.width) // block_size
+
+        row_idx = np.minimum(row_idx, blocks_y - 1)
+        col_idx = np.minimum(col_idx, blocks_x - 1)
+
+        # Reshape to 2D block grid
+        mvx_2d = mvx_arr.reshape(blocks_y, blocks_x)
+        mvy_2d = mvy_arr.reshape(blocks_y, blocks_x)
+
+        self.flow[0] = mvx_2d[row_idx][:, col_idx]
+        self.flow[1] = mvy_2d[row_idx][:, col_idx]
+
+        self.callback_count = num_blocks
+
+    callback = block_callback
 
     def get_flow(self, poc):
         return self.flow.copy()
@@ -138,9 +183,13 @@ class X265NativeEncoder:
         lib.x265_param_parse.restype = c_int
         lib.x265_param_parse.argtypes = [c_void_p, c_char_p, c_char_p]
 
-        # callback
+        # per-block callback
         lib.x265_param_set_mv_callback.restype = None
         lib.x265_param_set_mv_callback.argtypes = [c_void_p, MV_CALLBACK_FUNC, c_void_p]
+
+        # per-frame callback
+        lib.x265_param_set_mv_frame_callback.restype = None
+        lib.x265_param_set_mv_frame_callback.argtypes = [c_void_p, MV_FRAME_CALLBACK_FUNC, c_void_p]
 
         # x265_encoder_* functions
         lib.x265_encoder_open_215.restype = c_void_p
@@ -170,7 +219,8 @@ class X265NativeEncoder:
         ]
 
     def open_encoder(self, width, height, fps, preset="medium", tune=None,
-                     callback=None, user_data=None, stage='lookahead', **params):
+                     callback=None, frame_callback=None, user_data=None,
+                     stage='lookahead', **params):
         # Allocate and initialize parameters
         self.param = self.lib.x265_param_alloc()
         if not self.param:
@@ -188,10 +238,14 @@ class X265NativeEncoder:
         print_motion_info = b"1" if stage == 'lookahead' else b"2"
         self.lib.x265_param_parse(self.param, b"print-motion-info", print_motion_info)
 
-        if callback:
-            callback_func = MV_CALLBACK_FUNC(callback)
-            self.lib.x265_param_set_mv_callback(self.param, callback_func, user_data)
-            self._callback_func = callback_func
+        if frame_callback:
+            cb_func = MV_FRAME_CALLBACK_FUNC(frame_callback)
+            self.lib.x265_param_set_mv_frame_callback(self.param, cb_func, user_data)
+            self._callback_func = cb_func
+        elif callback:
+            cb_func = MV_CALLBACK_FUNC(callback)
+            self.lib.x265_param_set_mv_callback(self.param, cb_func, user_data)
+            self._callback_func = cb_func
 
         for key, value in params.items():
             key_bytes = key.encode('utf-8')
@@ -279,7 +333,7 @@ class X265NativeWrapper:
             width, height, fps,
             preset=preset,
             tune='zerolatency',
-            callback=collector.callback,
+            frame_callback=collector.frame_callback,
             stage=stage,
             frames=2
         )
