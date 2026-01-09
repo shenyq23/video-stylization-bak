@@ -170,7 +170,7 @@ class X265NativeEncoder:
         ]
 
     def open_encoder(self, width, height, fps, preset="medium", tune=None,
-                     callback=None, user_data=None, **params):
+                     callback=None, user_data=None, stage='lookahead', **params):
         # Allocate and initialize parameters
         self.param = self.lib.x265_param_alloc()
         if not self.param:
@@ -185,7 +185,8 @@ class X265NativeEncoder:
         self.lib.x265_param_parse(self.param, b"input-res", f"{width}x{height}".encode())
         self.lib.x265_param_parse(self.param, b"fps", str(fps).encode())
 
-        self.lib.x265_param_parse(self.param, b"print-motion-info", b"2")
+        print_motion_info = b"1" if stage == 'lookahead' else b"2"
+        self.lib.x265_param_parse(self.param, b"print-motion-info", print_motion_info)
 
         if callback:
             callback_func = MV_CALLBACK_FUNC(callback)
@@ -279,6 +280,7 @@ class X265NativeWrapper:
             preset=preset,
             tune='zerolatency',
             callback=collector.callback,
+            stage=stage,
             frames=2
         )
 
