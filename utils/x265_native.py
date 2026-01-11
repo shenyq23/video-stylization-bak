@@ -198,6 +198,9 @@ class X265NativeEncoder:
         lib.x265_encoder_close.restype = None
         lib.x265_encoder_close.argtypes = [c_void_p]
 
+        lib.x265_profiling_lookahead.restype = None
+        lib.x265_profiling_lookahead.argtypes = [c_void_p]
+
         # x265_encoder_reset function
         lib.x265_encoder_reset.restype = c_int
         lib.x265_encoder_reset.argtypes = [c_void_p]
@@ -241,6 +244,15 @@ class X265NativeEncoder:
 
         print_motion_info = b"1" if stage == 'lookahead' else b"2"
         self.lib.x265_param_parse(self.param, b"print-motion-info", print_motion_info)
+
+        if stage == 'lookahead':
+            self.lib.x265_param_parse(self.param, b"skip-lookahead-intra", b"1")
+            self.lib.x265_param_parse(self.param, b"skip-lookahead-slicetype", b"1")
+            # self.lib.x265_param_parse(self.param, b"profile-lookahead", b"1")
+            # self.lib.x265_param_parse(self.param, b"log-level", b"info")
+            self.lib.x265_param_parse(self.param, b"lookahead-threads", b"8")
+            self.lib.x265_param_parse(self.param, b"lookahead-slices", b"8")
+            self.lib.x265_param_parse(self.param, b"motion-only", b"1")
 
         if frame_callback:
             cb_func = MV_FRAME_CALLBACK_FUNC(frame_callback)
@@ -468,6 +480,7 @@ class X265NativeWrapper:
         # 4. Flush encoder
         t_flush_start = time.perf_counter() if profile_data is not None else None
         self._flush_encoder(encoder)
+
         if profile_data is not None:
             profile_data['encoder_flush'].append(time.perf_counter() - t_flush_start)
 
