@@ -181,6 +181,10 @@ def main(args):
             use_color=args.use_color,
             use_structure=args.use_structure,
             combine_method=args.occlusion_combine_method,
+            geometry_threshold=(args.geometry_threshold_alpha, args.geometry_threshold_beta),
+            luminosity_threshold=args.luminosity_threshold,
+            color_threshold=args.color_threshold,
+            structure_threshold=args.structure_threshold,
         )
 
         # Use warping flows for final output
@@ -312,6 +316,12 @@ def run_motion_compensation(**kwargs):
         "use_luminosity": False,
         "use_color": False,
         "use_structure": False,
+        "geometry_threshold_alpha": 0.01,
+        "geometry_threshold_beta": 0.5,
+        "luminosity_threshold": 64,
+        "color_threshold": 64,
+        "structure_threshold": 50,
+        "occlusion_combine_method": "mean",
         "write_diff": False,
         "diff_mode": "heatmap",
         "diff_amplify": 4.0,
@@ -355,6 +365,11 @@ if __name__ == "__main__":
     parser.add_argument("--use_luminosity", action="store_true", help="Use luminosity-based occlusion detection (photometric check with mean)")
     parser.add_argument("--use_color", action="store_true", help="Use color-based occlusion detection (per-channel photometric check)")
     parser.add_argument("--use_structure", action="store_true", help="Use structure-based occlusion detection (gradient-based check)")
+    parser.add_argument("--geometry_threshold_alpha", type=float, default=0.01, help="Alpha parameter for geometry threshold (error > alpha * flow_mag + beta)")
+    parser.add_argument("--geometry_threshold_beta", type=float, default=0.5, help="Beta parameter for geometry threshold (error > alpha * flow_mag + beta)")
+    parser.add_argument("--luminosity_threshold", type=float, default=64, help="Threshold for luminosity-based occlusion detection")
+    parser.add_argument("--color_threshold", type=float, default=64, help="Threshold for color-based occlusion detection")
+    parser.add_argument("--structure_threshold", type=float, default=50, help="Threshold for structure-based occlusion detection")
     parser.add_argument("--occlusion_combine_method", type=str, default="mean", choices=["mean", "max", "sum"], help="Method to combine multiple occlusion components: mean (average), max (union), or sum (clamped sum)")
     parser.add_argument("--write_diff", action="store_true", help="Write a per-frame difference visualization between stylized and output")
     parser.add_argument("--diff_mode", type=str, default="heatmap", choices=["abs_rgb", "abs_gray", "heatmap"], help="Diff visualization mode")
