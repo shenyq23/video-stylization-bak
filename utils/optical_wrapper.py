@@ -9,8 +9,9 @@ import pandas as pd
 import numpy as np
 from types import SimpleNamespace
 
-sys.path.append("../deps/gmflow")
-# sys.path.append("../deps/RAFT")
+# Add at the BEGINNING of sys.path
+sys.path.insert(0, "../deps/gmflow")
+# sys.path.insert(0, "../deps/RAFT")
 
 from utils.x265_wrapper import X265EncoderWrapper
 from gmflow.gmflow import GMFlow
@@ -55,30 +56,30 @@ class OcclusionComputation:
         diff_bwd = torch.norm(backward_flow + warped_fwd_flow, dim=1)
 
         threshold = alpha * flow_mag + beta
-        
+
         # Convert to continuous [0, 1] using sigmoid-like function
         # When diff is much larger than threshold, occlusion approaches 1
         # When diff is much smaller than threshold, occlusion approaches 0
         fwd_occ = torch.clamp(diff_fwd / (threshold + 1e-6), 0, 1)
         bwd_occ = torch.clamp(diff_bwd / (threshold + 1e-6), 0, 1)
-        
+
         return fwd_occ, bwd_occ
-    
+
     @classmethod
     def _luminosity_occlusion(cls, src_frame, tgt_frame, forward_flow, backward_flow, threshold=64.0):
         # Forward occlusion: warp target with forward flow, compare to source
         warped_target = flow_warp(tgt_frame, forward_flow)
         forward_photo_error = torch.abs(src_frame - warped_target).mean(dim=1)  # [N, H, W]
-        
+
         # Backward occlusion: warp source with backward flow, compare to target
         warped_source = flow_warp(src_frame, backward_flow)
         backward_photo_error = torch.abs(tgt_frame - warped_source).mean(dim=1)  # [N, H, W]
-        
+
         # Normalize to [0, 1] range using sigmoid-like function
         # threshold controls the sensitivity (default 64 = 255 * 0.25)
         forward_occlusion = torch.clamp(forward_photo_error / threshold, 0, 1)
         backward_occlusion = torch.clamp(backward_photo_error / threshold, 0, 1)
-        
+
         return forward_occlusion, backward_occlusion
 
     @classmethod
@@ -86,19 +87,19 @@ class OcclusionComputation:
         # Forward occlusion: warp target with forward flow, compare to source
         warped_target = flow_warp(tgt_frame, forward_flow)
         forward_color_error = torch.abs(src_frame - warped_target)  # [N, 3, H, W]
-        
+
         # Backward occlusion: warp source with backward flow, compare to target
         warped_source = flow_warp(src_frame, backward_flow)
         backward_color_error = torch.abs(tgt_frame - warped_source)  # [N, 3, H, W]
-        
+
         # Use max across channels for color sensitivity
         forward_color_error = forward_color_error.max(dim=1)[0]  # [N, H, W]
         backward_color_error = backward_color_error.max(dim=1)[0]  # [N, H, W]
-        
+
         # Normalize to [0, 1] range
         forward_occlusion = torch.clamp(forward_color_error / threshold, 0, 1)
         backward_occlusion = torch.clamp(backward_color_error / threshold, 0, 1)
-        
+
         return forward_occlusion, backward_occlusion
 
     @classmethod
@@ -108,66 +109,66 @@ class OcclusionComputation:
             # img: [N, 3, H, W]
             dx_kernel = torch.tensor([[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]], dtype=img.dtype, device=img.device)
             dy_kernel = torch.tensor([[[-1, -2, -1], [0, 0, 0], [1, 2, 1]]], dtype=img.dtype, device=img.device)
-            
+
             # Expand kernels for all channels
             dx_kernel = dx_kernel.repeat(3, 1, 1, 1) / 8.0  # [3, 1, 3, 3]
             dy_kernel = dy_kernel.repeat(3, 1, 1, 1) / 8.0  # [3, 1, 3, 3]
-            
+
             # Compute gradients
             grad_x = torch.nn.functional.conv2d(img, dx_kernel, padding=1, groups=3)
             grad_y = torch.nn.functional.conv2d(img, dy_kernel, padding=1, groups=3)
-            
+
             # Gradient magnitude
             grad_mag = torch.sqrt(grad_x ** 2 + grad_y ** 2 + 1e-8)
             return grad_mag
-        
+
         # Forward occlusion: compare gradients of source and warped target
         warped_target = flow_warp(tgt_frame, forward_flow)
         src_grad = compute_gradients(src_frame)
         warped_tgt_grad = compute_gradients(warped_target)
         forward_struct_error = torch.abs(src_grad - warped_tgt_grad).mean(dim=1)  # [N, H, W]
-        
+
         # Backward occlusion: compare gradients of target and warped source
         warped_source = flow_warp(src_frame, backward_flow)
         tgt_grad = compute_gradients(tgt_frame)
         warped_src_grad = compute_gradients(warped_source)
         backward_struct_error = torch.abs(tgt_grad - warped_src_grad).mean(dim=1)  # [N, H, W]
-        
+
         # Normalize to [0, 1] range
         forward_occlusion = torch.clamp(forward_struct_error / threshold, 0, 1)
         backward_occlusion = torch.clamp(backward_struct_error / threshold, 0, 1)
-        
+
         return forward_occlusion, backward_occlusion
 
     def __call__(self, src_frame, tgt_frame, forward_flow, backward_flow):
         forward_occlusion_components = []
         backward_occlusion_components = []
-        
+
         if self.use_geometry:
             forward_occ, backward_occ = OcclusionComputation._geometry_occlusion(src_frame, tgt_frame, forward_flow, backward_flow)
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
-        
+
         if self.use_luminosity:
             forward_occ, backward_occ = OcclusionComputation._luminosity_occlusion(src_frame, tgt_frame, forward_flow, backward_flow)
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
-        
+
         if self.use_color:
             forward_occ, backward_occ = OcclusionComputation._color_occlusion(src_frame, tgt_frame, forward_flow, backward_flow)
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
-        
+
         if self.use_structure:
             forward_occ, backward_occ = OcclusionComputation._structure_occlusion(src_frame, tgt_frame, forward_flow, backward_flow)
             forward_occlusion_components.append(forward_occ)
             backward_occlusion_components.append(backward_occ)
-        
+
         # Combine occlusion components based on combine_method
         if len(forward_occlusion_components) > 0:
             forward_stack = torch.stack(forward_occlusion_components, dim=0)
             backward_stack = torch.stack(backward_occlusion_components, dim=0)
-            
+
             if self.combine_method == 'mean':
                 combined_forward_occlusion = forward_stack.mean(dim=0)
                 combined_backward_occlusion = backward_stack.mean(dim=0)
@@ -181,7 +182,7 @@ class OcclusionComputation:
             # This shouldn't happen due to the assert in __init__
             combined_forward_occlusion = torch.zeros_like(forward_flow[:, 0])
             combined_backward_occlusion = torch.zeros_like(backward_flow[:, 0])
-        
+
         return combined_forward_occlusion, combined_backward_occlusion
 
 class OpticalFlowWrapper:
@@ -359,9 +360,17 @@ class RAFTFlowWrapper(OpticalFlowWrapper):
             return [forward_flows, backward_flows], np.mean(elapsed_times) * 1000
 
 class X265MVWrapper(OpticalFlowWrapper):
-    def __init__(self, device, encoder_path=None):
+    def __init__(self, device, encoder_path=None, native_x265=False):
+        """
+            encoder_path: path to x265 encoder (for CSV mode)
+        """
         super().__init__(device)
-        self.encoder = X265EncoderWrapper(encoder_path)
+        self.native_x265 = native_x265
+        if native_x265:
+            from utils.x265_native import X265NativeWrapper
+            self.native_wrapper = X265NativeWrapper(device=device)
+        else:
+            self.encoder = X265EncoderWrapper(encoder_path)
 
     @staticmethod
     def _update_flow(flow_log_path, flows_ref, ref_idx, granularity):
@@ -393,9 +402,14 @@ class X265MVWrapper(OpticalFlowWrapper):
 
     def compute_flow(self, frames, ref_frame_idx_list, **kwargs):
         """
-        - kwargs should contain all the encoding params and the stage whose log will be used
-        - by default, we use encoding log and the granularity should be 4x4
+            frames: List of BGR frames
+            ref_frame_idx_list: Reference frame indices
+            **kwargs: Encoding parameters
         """
+        # zero-IO native x265 mode first
+        if self.native_x265:
+            return self.native_wrapper.compute_flow(frames, ref_frame_idx_list, **kwargs)
+
         width = int(kwargs["size"].split("x")[0])
         height = int(kwargs["size"].split("x")[1])
         forward_flows = np.zeros((len(frames), 2, height, width), dtype=np.float32)
@@ -463,5 +477,5 @@ class X265MVWrapper(OpticalFlowWrapper):
         # Convert to torch tensors
         forward_flows = torch.from_numpy(forward_flows).to(self.device)
         backward_flows = torch.from_numpy(backward_flows).to(self.device)
-        
+
         return [forward_flows, backward_flows], None

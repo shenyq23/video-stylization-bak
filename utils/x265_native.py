@@ -1,0 +1,449 @@
+import os
+import ctypes
+import numpy as np
+import cv2
+import torch
+from pathlib import Path
+from ctypes import CDLL, CFUNCTYPE, Structure, POINTER
+from ctypes import c_int, c_uint, c_uint8, c_uint32, c_uint64, c_longlong, c_float, c_double, c_void_p, c_char_p
+
+
+# Per-block callback
+# void (*callback)(int poc, int x, int y, int w, int h,
+#                  float mvx, float mvy, int deltapoc, void* user_data)
+MV_CALLBACK_FUNC = CFUNCTYPE(
+    None,
+    c_int,    # poc
+    c_int,    # x
+    c_int,    # y
+    c_int,    # w
+    c_int,    # h
+    c_float,  # mvx
+    c_float,  # mvy
+    c_int,    # deltapoc
+    c_void_p  # user_data
+)
+
+# Per-frame callback
+MV_FRAME_CALLBACK_FUNC = CFUNCTYPE(
+    None,
+    c_int,              # poc
+    c_int,              # width
+    c_int,              # height
+    c_int,              # block_size
+    POINTER(c_float),   # mvx_array
+    POINTER(c_float),   # mvy_array
+    POINTER(c_int),     # deltapoc_array
+    c_void_p            # user_data
+)
+
+
+class x265_nal(Structure):
+    """x265 NAL unit structure"""
+    _fields_ = [
+        ("type", c_uint32),
+        ("sizeBytes", c_uint32),
+        ("payload", POINTER(c_uint8))
+    ]
+
+
+class x265_picture(Structure):
+    """
+    Must match x265's x265_picture deps/x265/source/x265.h
+    """
+    _fields_ = [
+        # Timestamps
+        ("pts", c_longlong),      # int64_t pts
+        ("dts", c_longlong),      # int64_t dts
+
+        ("vbvEndFlag", c_int),
+        ("userData", c_void_p),
+
+        # Frame data planes (4 planes for RGBA support, we use 3 for I420: Y, U, V)
+        ("planes", c_void_p * 4),
+        ("stride", c_int * 4),
+
+        # Picture parameters
+        ("bitDepth", c_int),
+        ("sliceType", c_int),
+        ("poc", c_int),
+        ("colorSpace", c_int),
+
+        # Note: x265_picture has many more fields
+        # but these are the critical ones for basic encoding
+    ]
+
+
+class MVCollector:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        # Flow array: [2, H, W] for (x, y) components
+        self.flow = np.zeros((2, height, width), dtype=np.float32)
+        self.callback_count = 0
+
+    def block_callback(self, poc, x, y, w, h, mvx, mvy, deltapoc, user_data):
+        if poc == 0:
+            return
+
+        # Ensure block is within bounds
+        x_end = min(x + w, self.width)
+        y_end = min(y + h, self.height)
+
+        if x >= self.width or y >= self.height:
+            return
+
+        # mvx/mvy are in pixels precision
+        self.flow[0, y:y_end, x:x_end] = mvx
+        self.flow[1, y:y_end, x:x_end] = mvy
+
+        self.callback_count += 1
+
+    def frame_callback(self, poc, width, height, block_size, mvx_ptr, mvy_ptr, deltapoc_ptr, user_data):
+        if poc == 0:
+            return
+
+        # block_size (16 or 4)
+        blocks_x = (width + block_size - 1) // block_size
+        blocks_y = (height + block_size - 1) // block_size
+        num_blocks = blocks_x * blocks_y
+
+        # numpy view from C pointers
+        mvx_arr = np.ctypeslib.as_array(mvx_ptr, shape=(num_blocks,))
+        mvy_arr = np.ctypeslib.as_array(mvy_ptr, shape=(num_blocks,))
+
+        # Pre-compute row/col indices for each pixel
+        row_idx = np.arange(self.height) // block_size
+        col_idx = np.arange(self.width) // block_size
+
+        row_idx = np.minimum(row_idx, blocks_y - 1)
+        col_idx = np.minimum(col_idx, blocks_x - 1)
+
+        # Reshape to 2D block grid
+        mvx_2d = mvx_arr.reshape(blocks_y, blocks_x)
+        mvy_2d = mvy_arr.reshape(blocks_y, blocks_x)
+
+        self.flow[0] = mvx_2d[row_idx][:, col_idx]
+        self.flow[1] = mvy_2d[row_idx][:, col_idx]
+
+        self.callback_count = num_blocks
+
+    callback = block_callback
+
+    def get_flow(self, poc):
+        return self.flow.copy()
+
+    def reset(self):
+        self.flow.fill(0)
+        self.callback_count = 0
+
+
+class X265NativeEncoder:
+    """
+    Low-level x265 encoder interface using ctypes.
+    """
+
+    def __init__(self, lib_path=None):
+        self.param = None
+        self.encoder = None
+        self.lib = None
+
+        if lib_path is None:
+            project_root = Path(__file__).parent.parent
+            lib_path = project_root / "deps" / "x265" / "build" / "linux-dynamic" / "libx265.so"
+            lib_path = str(lib_path)
+
+        if not os.path.exists(lib_path):
+            raise FileNotFoundError(
+                f"x265 library not found: {lib_path}\n"
+            )
+
+        self.lib = CDLL(lib_path)
+        self._setup_function_signatures()
+
+    def _setup_function_signatures(self):
+        lib = self.lib
+
+        # x265_param_* functions
+        lib.x265_param_alloc.restype = c_void_p
+        lib.x265_param_alloc.argtypes = []
+
+        lib.x265_param_free.restype = None
+        lib.x265_param_free.argtypes = [c_void_p]
+
+        lib.x265_param_default.restype = None
+        lib.x265_param_default.argtypes = [c_void_p]
+
+        lib.x265_param_default_preset.restype = c_int
+        lib.x265_param_default_preset.argtypes = [c_void_p, c_char_p, c_char_p]
+
+        lib.x265_param_apply_profile.restype = c_int
+        lib.x265_param_apply_profile.argtypes = [c_void_p, c_char_p]
+
+        lib.x265_param_parse.restype = c_int
+        lib.x265_param_parse.argtypes = [c_void_p, c_char_p, c_char_p]
+
+        # per-block callback
+        lib.x265_param_set_mv_callback.restype = None
+        lib.x265_param_set_mv_callback.argtypes = [c_void_p, MV_CALLBACK_FUNC, c_void_p]
+
+        # per-frame callback
+        lib.x265_param_set_mv_frame_callback.restype = None
+        lib.x265_param_set_mv_frame_callback.argtypes = [c_void_p, MV_FRAME_CALLBACK_FUNC, c_void_p]
+
+        # x265_encoder_* functions
+        lib.x265_encoder_open_215.restype = c_void_p
+        lib.x265_encoder_open_215.argtypes = [c_void_p]
+
+        lib.x265_encoder_close.restype = None
+        lib.x265_encoder_close.argtypes = [c_void_p]
+
+        # x265_encoder_reset function
+        lib.x265_encoder_reset.restype = c_int
+        lib.x265_encoder_reset.argtypes = [c_void_p]
+
+        # x265_picture_* functions
+        lib.x265_picture_alloc.restype = c_void_p
+        lib.x265_picture_alloc.argtypes = []
+
+        lib.x265_picture_free.restype = None
+        lib.x265_picture_free.argtypes = [c_void_p]
+
+        lib.x265_picture_init.restype = None
+        lib.x265_picture_init.argtypes = [c_void_p, c_void_p]
+
+        # x265_encoder_encode function
+        lib.x265_encoder_encode.restype = c_int
+        lib.x265_encoder_encode.argtypes = [
+            c_void_p,
+            POINTER(c_void_p),
+            POINTER(c_uint32),
+            c_void_p,
+            c_void_p
+        ]
+
+    def open_encoder(self, width, height, fps, preset="medium", tune=None,
+                     callback=None, frame_callback=None, user_data=None,
+                     stage='lookahead', **params):
+        # Allocate and initialize parameters
+        self.param = self.lib.x265_param_alloc()
+        if not self.param:
+            raise RuntimeError("Failed to allocate x265 parameters")
+
+        preset_bytes = preset.encode('utf-8')
+        tune_bytes = tune.encode('utf-8') if tune else None
+        ret = self.lib.x265_param_default_preset(self.param, preset_bytes, tune_bytes)
+        if ret != 0:
+            raise RuntimeError(f"Failed to set preset: {preset}")
+
+        self.lib.x265_param_parse(self.param, b"input-res", f"{width}x{height}".encode())
+        self.lib.x265_param_parse(self.param, b"fps", str(fps).encode())
+
+        print_motion_info = b"1" if stage == 'lookahead' else b"2"
+        self.lib.x265_param_parse(self.param, b"print-motion-info", print_motion_info)
+
+        if frame_callback:
+            cb_func = MV_FRAME_CALLBACK_FUNC(frame_callback)
+            self.lib.x265_param_set_mv_frame_callback(self.param, cb_func, user_data)
+            self._callback_func = cb_func
+        elif callback:
+            cb_func = MV_CALLBACK_FUNC(callback)
+            self.lib.x265_param_set_mv_callback(self.param, cb_func, user_data)
+            self._callback_func = cb_func
+
+        for key, value in params.items():
+            key_bytes = key.encode('utf-8')
+            value_bytes = str(value).encode('utf-8')
+            self.lib.x265_param_parse(self.param, key_bytes, value_bytes)
+
+        self.encoder = self.lib.x265_encoder_open_215(self.param)
+        if not self.encoder:
+            raise RuntimeError("Failed to open x265 encoder")
+
+        return True
+
+    def reset_encoder(self):
+        if not self.encoder:
+            raise RuntimeError("Encoder not open")
+        ret = self.lib.x265_encoder_reset(self.encoder)
+        if ret < 0:
+            raise RuntimeError(f"Failed to reset encoder, return code: {ret}")
+        return True
+
+    def close_encoder(self):
+        if self.encoder:
+            self.lib.x265_encoder_close(self.encoder)
+            self.encoder = None
+        if self.param:
+            self.lib.x265_param_free(self.param)
+            self.param = None
+
+    def __del__(self):
+        self.close_encoder()
+
+
+class X265NativeWrapper:
+    def __init__(self, device='cuda', lib_path=None):
+        self.device = device
+        self.lib_path = lib_path
+
+        # cached encoder
+        self._encoder = None
+        self._encoder_config = None
+        self._collector = None
+
+    def _get_or_create_encoder(self, width, height, fps, preset, stage):
+        config = (width, height, fps, preset, stage)
+
+        # reset if config changed
+        if self._encoder is not None and self._encoder_config == config:
+            self._encoder.reset_encoder()
+            self._collector.reset()
+            return self._encoder, self._collector
+
+        # close old if exists
+        if self._encoder is not None:
+            self._encoder.close_encoder()
+
+        # create new
+        self._collector = MVCollector(width, height)
+        self._encoder = X265NativeEncoder(self.lib_path)
+        self._encoder.open_encoder(
+            width, height, fps,
+            preset=preset,
+            tune='zerolatency',
+            frame_callback=self._collector.frame_callback,
+            stage=stage,
+            frames=2
+        )
+        self._encoder_config = config
+
+        return self._encoder, self._collector
+
+    def close(self):
+        if self._encoder is not None:
+            self._encoder.close_encoder()
+            self._encoder = None
+            self._encoder_config = None
+            self._collector = None
+
+    def __del__(self):
+        self.close()
+
+    def compute_flow(self, frames, ref_frame_idx_list, **kwargs):
+        # Parse parameters
+        size_str = kwargs.get('size', f"{frames[0].shape[1]}x{frames[0].shape[0]}")
+        width, height = map(int, size_str.split('x'))
+        fps = kwargs.get('fps', 30)
+        preset = kwargs.get('preset', 'medium')
+        stage = kwargs.get('stage', 'lookahead')
+        if stage not in ['lookahead', 'encode']:
+            raise ValueError(f"Invalid stage: {stage}. Must be 'lookahead' or 'encode'")
+
+        num_frames = len(frames)
+
+        forward_flows = torch.zeros((num_frames, 2, height, width), device=self.device, dtype=torch.float32)
+        backward_flows = torch.zeros((num_frames, 2, height, width), device=self.device, dtype=torch.float32)
+
+        # loop frame pair
+        for idx in range(num_frames):
+            ref_idx_list = ref_frame_idx_list[idx] if isinstance(ref_frame_idx_list[idx], list) else [ref_frame_idx_list[idx]]
+
+            for ref_idx in ref_idx_list:
+                if ref_idx < 0 or ref_idx >= num_frames:
+                    continue
+
+                # Encode frame pair: [ref_frame, current_frame]
+                # This produces motion from ref_frame -> current_frame
+                flow = self._encode_frame_pair(
+                    frames[ref_idx], frames[idx],
+                    width, height, fps, preset, stage
+                )
+
+                flow_tensor = torch.from_numpy(flow).to(self.device)
+
+                if ref_idx < idx:
+                    # ref_idx -> idx: this is backward flow for frame idx
+                    backward_flows[idx] = flow_tensor
+                elif ref_idx > idx:
+                    # ref_idx -> idx: this is forward flow for frame idx
+                    forward_flows[idx] = flow_tensor
+
+        return [forward_flows, backward_flows], None
+
+    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset, stage='lookahead'):
+        if frame0.shape[:2] != (height, width):
+            frame0 = cv2.resize(frame0, (width, height))
+        if frame1.shape[:2] != (height, width):
+            frame1 = cv2.resize(frame1, (width, height))
+
+        # Convert BGR to YUV I420
+        yuv0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2YUV_I420)
+        yuv1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2YUV_I420)
+
+        encoder, collector = self._get_or_create_encoder(width, height, fps, preset, stage)
+
+        self._encode_yuv_frame(encoder, yuv0, width, height, 0)
+        self._encode_yuv_frame(encoder, yuv1, width, height, 1)
+        self._flush_encoder(encoder)
+
+        return collector.get_flow(1)
+
+    def _encode_yuv_frame(self, encoder, yuv_data, width, height, poc):
+        pic = encoder.lib.x265_picture_alloc()
+        if not pic:
+            raise RuntimeError("Failed to allocate x265_picture")
+
+        try:
+            encoder.lib.x265_picture_init(encoder.param, pic)
+
+            pic_struct = x265_picture.from_address(pic)
+
+            y_size = height * width
+            uv_size = (height // 2) * (width // 2)
+
+            yuv_data = np.ascontiguousarray(yuv_data)
+
+            y_plane = yuv_data[:y_size]
+            u_plane = yuv_data[y_size:y_size + uv_size]
+            v_plane = yuv_data[y_size + uv_size:]
+
+            pic_struct.planes[0] = y_plane.ctypes.data_as(c_void_p)
+            pic_struct.planes[1] = u_plane.ctypes.data_as(c_void_p)
+            pic_struct.planes[2] = v_plane.ctypes.data_as(c_void_p)
+            pic_struct.stride[0] = width
+            pic_struct.stride[1] = width // 2
+            pic_struct.stride[2] = width // 2
+
+            pic_struct.poc = poc
+
+            pp_nal = c_void_p()
+            pi_nal = c_uint32()
+            ret = encoder.lib.x265_encoder_encode(
+                encoder.encoder,
+                ctypes.byref(pp_nal),
+                ctypes.byref(pi_nal),
+                pic,
+                None  # pic_out
+            )
+
+            if ret < 0:
+                raise RuntimeError(f"Encoding failed with code {ret}")
+
+        finally:
+            encoder.lib.x265_picture_free(pic)
+
+    def _flush_encoder(self, encoder):
+        pp_nal = c_void_p()
+        pi_nal = c_uint32()
+
+        while True:
+            ret = encoder.lib.x265_encoder_encode(
+                encoder.encoder,
+                ctypes.byref(pp_nal),
+                ctypes.byref(pi_nal),
+                None,  # NULL picture means flush
+                None
+            )
+            if ret <= 0:
+                break

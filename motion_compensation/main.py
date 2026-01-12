@@ -3,7 +3,9 @@ import sys
 
 # disable torch warning
 os.environ["TORCH_CPP_LOG_LEVEL"] = "ERROR"
-sys.path.append("..")
+
+# Add at the BEGINNING of sys.path
+sys.path.insert(0, "..")
 
 import torch
 import cv2
@@ -29,14 +31,14 @@ def parse_x265_params(param_str):
     """
     if not param_str or param_str.strip() == "":
         return {}
-    
+
     param_str = param_str.strip()
-    
+
     # Check if it's JSON format (starts with { or ")
     if param_str.startswith('{') or param_str.startswith('"'):
         # Legacy JSON format
         return json.loads(param_str.replace("'", '"'))
-    
+
     # Parse key=value format
     params = {}
     pairs = param_str.split()
@@ -44,7 +46,7 @@ def parse_x265_params(param_str):
         if '=' not in pair:
             raise ValueError(f"Invalid x265 parameter format: '{pair}'. Expected 'key=value'")
         key, value = pair.split('=', 1)
-        
+
         # Auto-convert types
         if value.lower() == 'true':
             params[key] = True
@@ -56,7 +58,7 @@ def parse_x265_params(param_str):
             params[key] = float(value)
         else:
             params[key] = value
-    
+
     return params
 
 def config_str(batch_size, model_name, x265_params, occlusion_methods):
@@ -65,12 +67,12 @@ def config_str(batch_size, model_name, x265_params, occlusion_methods):
         for k, v in x265_params.items():
             result += f"_{k}_{v}"
     result += f"_{batch_size}"
-    
+
     # Add occlusion methods to config name
     if occlusion_methods:
         occ_str = "occ_" + "_".join(sorted(occlusion_methods))
         result += f"_{occ_str}"
-    
+
     return result
 
 def main(args):
@@ -95,7 +97,7 @@ def main(args):
 
         x265_params = {}
         occlusion_flow_model = None  # For mix/reverse_mix modes
-        
+
         if args.flow_model == "gmflow":
             from utils.optical_wrapper import GMFlowWrapper as FlowModelClass
         elif args.flow_model == "raft":
@@ -115,22 +117,22 @@ def main(args):
             x265_params = parse_x265_params(args.x265_params)
         else:
             raise NotImplementedError(f"flow model {args.flow_model} not implemented.")
-        
+
         if "size" in x265_params:
             del x265_params["size"]
         if "frame_rate" in x265_params:
             del x265_params["frame_rate"]
-        
+
         # Determine occlusion methods early for config name
         occlusion_methods = []
         if args.use_geometry: occlusion_methods.append('geometry')
         if args.use_luminosity: occlusion_methods.append('luminosity')
         if args.use_color: occlusion_methods.append('color')
         if args.use_structure: occlusion_methods.append('structure')
-        
+
         if not occlusion_methods:
             raise ValueError("At least one occlusion method must be enabled")
-        
+
         # Check if output already exists (before expensive computation)
         video_name = f"{args.video_name}-{size}"
         config = config_str(args.batch_size, args.flow_model, x265_params, occlusion_methods)
@@ -139,19 +141,26 @@ def main(args):
             print(f"Output directory already exists: {output_dir}")
             print("Skipping computation. Use a different config or delete the directory to recompute.")
             return
-        
+
         flow_model = FlowModelClass(args.device)
         ref_frame_idx_list = [0] + [(i - 1) // args.batch_size * args.batch_size for i in range(1, len(frames))]
-        
+
+        native_x265 = getattr(args, 'native_x265', False)
+        if args.flow_model == "x265" or args.flow_model == "mix":
+            flow_model = FlowModelClass(args.device, native_x265=native_x265)
+
         # Compute optical flow for warping
         if args.flow_model == "x265" or args.flow_model == "mix":
             flows, _ = flow_model.compute_flow(frames, ref_frame_idx_list, size=size, frame_rate=fps, **x265_params)
         else:
             flows, _ = flow_model.compute_flow(frames, ref_frame_idx_list)
-        
+
         # Compute optical flow for occlusion (if using mix/reverse_mix)
         if args.flow_model == "mix" or args.flow_model == "reverse_mix":
-            occlusion_flow_model = OcclusionFlowModelClass(args.device)
+            if args.flow_model == "reverse_mix":
+                occlusion_flow_model = OcclusionFlowModelClass(args.device, native_x265=native_x265)
+            else:
+                occlusion_flow_model = OcclusionFlowModelClass(args.device)
             if args.flow_model == "reverse_mix":
                 # reverse_mix: occlusion uses x265
                 occlusion_flows, _ = occlusion_flow_model.compute_flow(frames, ref_frame_idx_list, size=size, frame_rate=fps, **x265_params)
@@ -161,10 +170,10 @@ def main(args):
         else:
             # For non-mix modes, use the same flow for both warping and occlusion
             occlusion_flows = flows
-        
+
         # Convert frames to tensors for occlusion computation
         images = torch.stack([torch.from_numpy(frame).permute(2, 0, 1).float() for frame in frames], dim=0).to(args.device)
-        
+
         # Compute occlusion using OcclusionComputation
         occlusion_computer = OcclusionComputation(
             use_geometry=args.use_geometry,
@@ -173,25 +182,25 @@ def main(args):
             use_structure=args.use_structure,
             combine_method=args.occlusion_combine_method,
         )
-        
+
         # Use warping flows for final output
         forward_flows, backward_flows = flows
         # Use occlusion flows for occlusion computation
         occlusion_forward_flows, occlusion_backward_flows = occlusion_flows
-        
+
         forward_occlusions = torch.zeros((len(frames), images.shape[2], images.shape[3]), device=args.device, dtype=torch.float32)
         backward_occlusions = torch.zeros((len(frames), images.shape[2], images.shape[3]), device=args.device, dtype=torch.float32)
-        
+
         for i, ref_idx in enumerate(ref_frame_idx_list):
             src_frame = images[ref_idx : ref_idx + 1]
             tgt_frame = images[i : i + 1]
             forward_flow = occlusion_forward_flows[i : i + 1]
             backward_flow = occlusion_backward_flows[i : i + 1]
-            
+
             forward_occ, backward_occ = occlusion_computer(src_frame, tgt_frame, forward_flow, backward_flow)
             forward_occlusions[i] = forward_occ[0]
             backward_occlusions[i] = backward_occ[0]
-        
+
         occlusions = [forward_occlusions, backward_occlusions]
 
         key_frame_set = set(ref_frame_idx_list)
@@ -289,7 +298,7 @@ def run_motion_compensation(**kwargs):
     class Args:
         pass
     args = Args()
-    
+
     # Set defaults
     defaults = {
         "resolution": None,
@@ -306,26 +315,27 @@ def run_motion_compensation(**kwargs):
         "write_diff": False,
         "diff_mode": "heatmap",
         "diff_amplify": 4.0,
+        "native_x265": False,  # Use native zero-IO x265 mode
     }
-    
+
     # Check required arguments
     required_args = ["video_name", "flow_model", "batch_size"]
     for req_arg in required_args:
         if req_arg not in kwargs:
             raise ValueError(f"Required argument '{req_arg}' is missing")
-    
+
     # Validate flow_model
     valid_flow_models = ["gmflow", "raft", "x265", "mix", "reverse_mix"]
     if kwargs["flow_model"] not in valid_flow_models:
         raise ValueError(f"flow_model must be one of {valid_flow_models}")
-    
+
     # Merge defaults with provided kwargs
     all_args = {**defaults, **kwargs}
-    
+
     # Set attributes on args object
     for key, value in all_args.items():
         setattr(args, key, value)
-    
+
     # Call main function
     main(args)
 
@@ -349,6 +359,7 @@ if __name__ == "__main__":
     parser.add_argument("--write_diff", action="store_true", help="Write a per-frame difference visualization between stylized and output")
     parser.add_argument("--diff_mode", type=str, default="heatmap", choices=["abs_rgb", "abs_gray", "heatmap"], help="Diff visualization mode")
     parser.add_argument("--diff_amplify", type=float, default=4.0, help="Amplify factor for diff (e.g., 4.0 makes small differences more visible)")
+    parser.add_argument("--native_x265", action="store_true", help="Use native zero-IO x265 mode (eliminates file I/O for ~2.4x speedup)")
 
     args = parser.parse_args()
     main(args)
