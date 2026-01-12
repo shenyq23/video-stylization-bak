@@ -34,10 +34,10 @@ class OcclusionComputation:
         use_color=False,
         use_structure=False,
         combine_method='mean',  # 'mean', 'max', or 'sum'
-        geometry_threshold=None,
-        luminosity_threshold=None,
-        color_threshold=None,
-        structure_threshold=None,
+        geometry_threshold=(0.01, 0.5),
+        luminosity_threshold=64,
+        color_threshold=64,
+        structure_threshold=50,  # temporarily these thresholds are fixed
     ):
         assert use_geometry or use_luminosity or use_color or use_structure
         if use_geometry: assert geometry_threshold is not None
