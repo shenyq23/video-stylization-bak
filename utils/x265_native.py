@@ -78,9 +78,24 @@ class MVCollector:
     def __init__(self, width, height):
         self.width = width
         self.height = height
-        # Flow array: [2, H, W] for (x, y) components
+
+        # PRE-ALLOCATED BUFFERS
+        self.mvx_buffer = np.zeros((height, width), dtype=np.float32)
+        self.mvy_buffer = np.zeros((height, width), dtype=np.float32)
+        # self.deltapoc_buffer = np.zeros((height, width), dtype=np.int32)
+
+        # callback to be deleted
         self.flow = np.zeros((2, height, width), dtype=np.float32)
         self.callback_count = 0
+
+    def get_output_pointers(self):
+        """Return C-compatible pointers to pre-allocated buffers for x265"""
+        # NULL for deltapoc
+        return (
+            self.mvx_buffer.ctypes.data_as(POINTER(c_float)),
+            self.mvy_buffer.ctypes.data_as(POINTER(c_float)),
+            None
+        )
 
     def block_callback(self, poc, x, y, w, h, mvx, mvy, deltapoc, user_data):
         if poc == 0:
@@ -103,35 +118,42 @@ class MVCollector:
         if poc == 0:
             return
 
-        # block_size (16 or 4)
-        blocks_x = (width + block_size - 1) // block_size
-        blocks_y = (height + block_size - 1) // block_size
-        num_blocks = blocks_x * blocks_y
+        if block_size == 1:
+            # x265 already upsampled to full-resolution
+            mvx_full = np.ctypeslib.as_array(mvx_ptr, shape=(height, width))
+            mvy_full = np.ctypeslib.as_array(mvy_ptr, shape=(height, width))
 
-        # numpy view from C pointers
-        mvx_arr = np.ctypeslib.as_array(mvx_ptr, shape=(num_blocks,))
-        mvy_arr = np.ctypeslib.as_array(mvy_ptr, shape=(num_blocks,))
+            self.flow[0] = mvx_full
+            self.flow[1] = mvy_full
+            self.callback_count = height * width
 
-        # Pre-compute row/col indices for each pixel
-        row_idx = np.arange(self.height) // block_size
-        col_idx = np.arange(self.width) // block_size
+        else:
+            blocks_x = (width + block_size - 1) // block_size
+            blocks_y = (height + block_size - 1) // block_size
+            num_blocks = blocks_x * blocks_y
 
-        row_idx = np.minimum(row_idx, blocks_y - 1)
-        col_idx = np.minimum(col_idx, blocks_x - 1)
+            # numpy view from C pointers
+            mvx_arr = np.ctypeslib.as_array(mvx_ptr, shape=(num_blocks,))
+            mvy_arr = np.ctypeslib.as_array(mvy_ptr, shape=(num_blocks,))
 
-        # Reshape to 2D block grid
-        mvx_2d = mvx_arr.reshape(blocks_y, blocks_x)
-        mvy_2d = mvy_arr.reshape(blocks_y, blocks_x)
+            mvx_2d = mvx_arr.reshape(blocks_y, blocks_x)
+            mvy_2d = mvy_arr.reshape(blocks_y, blocks_x)
 
-        self.flow[0] = mvx_2d[row_idx][:, col_idx]
-        self.flow[1] = mvy_2d[row_idx][:, col_idx]
+            mvx_full = np.repeat(np.repeat(mvx_2d, block_size, axis=0), block_size, axis=1)
+            mvy_full = np.repeat(np.repeat(mvy_2d, block_size, axis=0), block_size, axis=1)
 
-        self.callback_count = num_blocks
+            # crop
+            self.flow[0] = mvx_full[:self.height, :self.width]
+            self.flow[1] = mvy_full[:self.height, :self.width]
+            self.callback_count = num_blocks
 
     callback = block_callback
 
     def get_flow(self, poc):
-        return self.flow.copy()
+        # already filled, return directly
+        self.flow[0] = self.mvx_buffer
+        self.flow[1] = self.mvy_buffer
+        return self.flow
 
     def reset(self):
         self.flow.fill(0)
@@ -190,6 +212,12 @@ class X265NativeEncoder:
         # per-frame callback
         lib.x265_param_set_mv_frame_callback.restype = None
         lib.x265_param_set_mv_frame_callback.argtypes = [c_void_p, MV_FRAME_CALLBACK_FUNC, c_void_p]
+
+        # pre-allocated output pointers
+        lib.x265_param_set_output_ptrs.restype = None
+        lib.x265_param_set_output_ptrs.argtypes = [
+            c_void_p, POINTER(c_float), POINTER(c_float), POINTER(c_int), c_int, c_int
+        ]
 
         # x265_encoder_* functions
         lib.x265_encoder_open_215.restype = c_void_p
@@ -254,14 +282,30 @@ class X265NativeEncoder:
             self.lib.x265_param_parse(self.param, b"lookahead-slices", b"8")
             self.lib.x265_param_parse(self.param, b"motion-only", b"1")
 
-        if frame_callback:
-            cb_func = MV_FRAME_CALLBACK_FUNC(frame_callback)
-            self.lib.x265_param_set_mv_frame_callback(self.param, cb_func, user_data)
-            self._callback_func = cb_func
-        elif callback:
-            cb_func = MV_CALLBACK_FUNC(callback)
-            self.lib.x265_param_set_mv_callback(self.param, cb_func, user_data)
-            self._callback_func = cb_func
+        use_preallocated = False
+        if hasattr(self, '_output_collector') and self._output_collector:
+            try:
+                mvx_ptr, mvy_ptr, deltapoc_ptr = self._output_collector.get_output_pointers()
+                self.lib.x265_param_set_output_ptrs(
+                    self.param, mvx_ptr, mvy_ptr, deltapoc_ptr, width, height
+                )
+                print(f"  Pre-allocated output: ENABLED (zero-copy, no callback!)")
+                use_preallocated = True
+            except AttributeError:
+                print(f"  Falling back to callback mode...")
+            except Exception as e:
+                print(f"  Falling back to callback mode...")
+
+        # set callback if not using pre-allocated
+        if not use_preallocated:
+            if frame_callback:
+                cb_func = MV_FRAME_CALLBACK_FUNC(frame_callback)
+                self.lib.x265_param_set_mv_frame_callback(self.param, cb_func, user_data)
+                self._callback_func = cb_func
+            elif callback:
+                cb_func = MV_CALLBACK_FUNC(callback)
+                self.lib.x265_param_set_mv_callback(self.param, cb_func, user_data)
+                self._callback_func = cb_func
 
         for key, value in params.items():
             key_bytes = key.encode('utf-8')
@@ -320,6 +364,7 @@ class X265NativeWrapper:
         # create new
         self._collector = MVCollector(width, height)
         self._encoder = X265NativeEncoder(self.lib_path)
+        self._encoder._output_collector = self._collector
         self._encoder.open_encoder(
             width, height, fps,
             preset=preset,
