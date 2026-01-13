@@ -78,9 +78,24 @@ class MVCollector:
     def __init__(self, width, height):
         self.width = width
         self.height = height
-        # Flow array: [2, H, W] for (x, y) components
+
+        # PRE-ALLOCATED BUFFERS
+        self.mvx_buffer = np.zeros((height, width), dtype=np.float32)
+        self.mvy_buffer = np.zeros((height, width), dtype=np.float32)
+        # self.deltapoc_buffer = np.zeros((height, width), dtype=np.int32)
+
+        # callback to be deleted
         self.flow = np.zeros((2, height, width), dtype=np.float32)
         self.callback_count = 0
+
+    def get_output_pointers(self):
+        """Return C-compatible pointers to pre-allocated buffers for x265"""
+        # NULL for deltapoc
+        return (
+            self.mvx_buffer.ctypes.data_as(POINTER(c_float)),
+            self.mvy_buffer.ctypes.data_as(POINTER(c_float)),
+            None
+        )
 
     def block_callback(self, poc, x, y, w, h, mvx, mvy, deltapoc, user_data):
         if poc == 0:
@@ -103,35 +118,42 @@ class MVCollector:
         if poc == 0:
             return
 
-        # block_size (16 or 4)
-        blocks_x = (width + block_size - 1) // block_size
-        blocks_y = (height + block_size - 1) // block_size
-        num_blocks = blocks_x * blocks_y
+        if block_size == 1:
+            # x265 already upsampled to full-resolution
+            mvx_full = np.ctypeslib.as_array(mvx_ptr, shape=(height, width))
+            mvy_full = np.ctypeslib.as_array(mvy_ptr, shape=(height, width))
 
-        # numpy view from C pointers
-        mvx_arr = np.ctypeslib.as_array(mvx_ptr, shape=(num_blocks,))
-        mvy_arr = np.ctypeslib.as_array(mvy_ptr, shape=(num_blocks,))
+            self.flow[0] = mvx_full
+            self.flow[1] = mvy_full
+            self.callback_count = height * width
 
-        # Pre-compute row/col indices for each pixel
-        row_idx = np.arange(self.height) // block_size
-        col_idx = np.arange(self.width) // block_size
+        else:
+            blocks_x = (width + block_size - 1) // block_size
+            blocks_y = (height + block_size - 1) // block_size
+            num_blocks = blocks_x * blocks_y
 
-        row_idx = np.minimum(row_idx, blocks_y - 1)
-        col_idx = np.minimum(col_idx, blocks_x - 1)
+            # numpy view from C pointers
+            mvx_arr = np.ctypeslib.as_array(mvx_ptr, shape=(num_blocks,))
+            mvy_arr = np.ctypeslib.as_array(mvy_ptr, shape=(num_blocks,))
 
-        # Reshape to 2D block grid
-        mvx_2d = mvx_arr.reshape(blocks_y, blocks_x)
-        mvy_2d = mvy_arr.reshape(blocks_y, blocks_x)
+            mvx_2d = mvx_arr.reshape(blocks_y, blocks_x)
+            mvy_2d = mvy_arr.reshape(blocks_y, blocks_x)
 
-        self.flow[0] = mvx_2d[row_idx][:, col_idx]
-        self.flow[1] = mvy_2d[row_idx][:, col_idx]
+            mvx_full = np.repeat(np.repeat(mvx_2d, block_size, axis=0), block_size, axis=1)
+            mvy_full = np.repeat(np.repeat(mvy_2d, block_size, axis=0), block_size, axis=1)
 
-        self.callback_count = num_blocks
+            # crop
+            self.flow[0] = mvx_full[:self.height, :self.width]
+            self.flow[1] = mvy_full[:self.height, :self.width]
+            self.callback_count = num_blocks
 
     callback = block_callback
 
     def get_flow(self, poc):
-        return self.flow.copy()
+        # already filled, return directly
+        self.flow[0] = self.mvx_buffer
+        self.flow[1] = self.mvy_buffer
+        return self.flow
 
     def reset(self):
         self.flow.fill(0)
@@ -191,12 +213,21 @@ class X265NativeEncoder:
         lib.x265_param_set_mv_frame_callback.restype = None
         lib.x265_param_set_mv_frame_callback.argtypes = [c_void_p, MV_FRAME_CALLBACK_FUNC, c_void_p]
 
+        # pre-allocated output pointers
+        lib.x265_param_set_output_ptrs.restype = None
+        lib.x265_param_set_output_ptrs.argtypes = [
+            c_void_p, POINTER(c_float), POINTER(c_float), POINTER(c_int), c_int, c_int
+        ]
+
         # x265_encoder_* functions
         lib.x265_encoder_open_215.restype = c_void_p
         lib.x265_encoder_open_215.argtypes = [c_void_p]
 
         lib.x265_encoder_close.restype = None
         lib.x265_encoder_close.argtypes = [c_void_p]
+
+        lib.x265_profiling_lookahead.restype = None
+        lib.x265_profiling_lookahead.argtypes = [c_void_p]
 
         # x265_encoder_reset function
         lib.x265_encoder_reset.restype = c_int
@@ -242,14 +273,39 @@ class X265NativeEncoder:
         print_motion_info = b"1" if stage == 'lookahead' else b"2"
         self.lib.x265_param_parse(self.param, b"print-motion-info", print_motion_info)
 
-        if frame_callback:
-            cb_func = MV_FRAME_CALLBACK_FUNC(frame_callback)
-            self.lib.x265_param_set_mv_frame_callback(self.param, cb_func, user_data)
-            self._callback_func = cb_func
-        elif callback:
-            cb_func = MV_CALLBACK_FUNC(callback)
-            self.lib.x265_param_set_mv_callback(self.param, cb_func, user_data)
-            self._callback_func = cb_func
+        if stage == 'lookahead':
+            self.lib.x265_param_parse(self.param, b"skip-lookahead-intra", b"1")
+            self.lib.x265_param_parse(self.param, b"skip-lookahead-slicetype", b"1")
+            # self.lib.x265_param_parse(self.param, b"profile-lookahead", b"1")
+            # self.lib.x265_param_parse(self.param, b"log-level", b"info")
+            self.lib.x265_param_parse(self.param, b"lookahead-threads", b"8")
+            self.lib.x265_param_parse(self.param, b"lookahead-slices", b"8")
+            self.lib.x265_param_parse(self.param, b"motion-only", b"1")
+
+        use_preallocated = False
+        if hasattr(self, '_output_collector') and self._output_collector:
+            try:
+                mvx_ptr, mvy_ptr, deltapoc_ptr = self._output_collector.get_output_pointers()
+                self.lib.x265_param_set_output_ptrs(
+                    self.param, mvx_ptr, mvy_ptr, deltapoc_ptr, width, height
+                )
+                print(f"  Pre-allocated output: ENABLED (zero-copy, no callback!)")
+                use_preallocated = True
+            except AttributeError:
+                print(f"  Falling back to callback mode...")
+            except Exception as e:
+                print(f"  Falling back to callback mode...")
+
+        # set callback if not using pre-allocated
+        if not use_preallocated:
+            if frame_callback:
+                cb_func = MV_FRAME_CALLBACK_FUNC(frame_callback)
+                self.lib.x265_param_set_mv_frame_callback(self.param, cb_func, user_data)
+                self._callback_func = cb_func
+            elif callback:
+                cb_func = MV_CALLBACK_FUNC(callback)
+                self.lib.x265_param_set_mv_callback(self.param, cb_func, user_data)
+                self._callback_func = cb_func
 
         for key, value in params.items():
             key_bytes = key.encode('utf-8')
@@ -308,6 +364,7 @@ class X265NativeWrapper:
         # create new
         self._collector = MVCollector(width, height)
         self._encoder = X265NativeEncoder(self.lib_path)
+        self._encoder._output_collector = self._collector
         self._encoder.open_encoder(
             width, height, fps,
             preset=preset,
@@ -331,16 +388,33 @@ class X265NativeWrapper:
         self.close()
 
     def compute_flow(self, frames, ref_frame_idx_list, **kwargs):
+        import time
+
         # Parse parameters
         size_str = kwargs.get('size', f"{frames[0].shape[1]}x{frames[0].shape[0]}")
         width, height = map(int, size_str.split('x'))
         fps = kwargs.get('fps', 30)
         preset = kwargs.get('preset', 'medium')
         stage = kwargs.get('stage', 'lookahead')
+        enable_profile = kwargs.get('profile', False)
         if stage not in ['lookahead', 'encode']:
             raise ValueError(f"Invalid stage: {stage}. Must be 'lookahead' or 'encode'")
 
         num_frames = len(frames)
+
+        # Initialize profiling data
+        profile_data = None
+        if enable_profile:
+            profile_data = {
+                'yuv_conversion': [],       # RGB→YUV conversion time
+                'encoder_open': [],         # encoder open/reset time
+                'struct_filling': [],       # x265_picture filling time
+                'x265_encode_call': [],     # x265_encoder_encode() call time
+                'encoder_flush': [],        # encoder flush time
+                'flow_copy': [],            # flow np.copy time
+                'tensor_conversion': [],    # numpy→torch + to(device) time
+                'total_per_pair': []        # Total time per frame pair
+            }
 
         forward_flows = torch.zeros((num_frames, 2, height, width), device=self.device, dtype=torch.float32)
         backward_flows = torch.zeros((num_frames, 2, height, width), device=self.device, dtype=torch.float32)
@@ -355,12 +429,22 @@ class X265NativeWrapper:
 
                 # Encode frame pair: [ref_frame, current_frame]
                 # This produces motion from ref_frame -> current_frame
+                t_pair_start = time.perf_counter() if enable_profile else None
+
                 flow = self._encode_frame_pair(
                     frames[ref_idx], frames[idx],
-                    width, height, fps, preset, stage
+                    width, height, fps, preset, stage,
+                    profile_data=profile_data
                 )
 
+                if enable_profile:
+                    profile_data['total_per_pair'].append(time.perf_counter() - t_pair_start)
+
+                # Tensor conversion timing
+                t_tensor_start = time.perf_counter() if enable_profile else None
                 flow_tensor = torch.from_numpy(flow).to(self.device)
+                if enable_profile:
+                    profile_data['tensor_conversion'].append(time.perf_counter() - t_tensor_start)
 
                 if ref_idx < idx:
                     # ref_idx -> idx: this is backward flow for frame idx
@@ -369,27 +453,96 @@ class X265NativeWrapper:
                     # ref_idx -> idx: this is forward flow for frame idx
                     forward_flows[idx] = flow_tensor
 
+        # Print profiling summary
+        if enable_profile and profile_data['total_per_pair']:
+            self._print_profile_summary(profile_data, stage, width, height)
+
         return [forward_flows, backward_flows], None
 
-    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset, stage='lookahead'):
+    def _print_profile_summary(self, profile_data, stage, width, height):
+        print("\n" + "="*70)
+        print("X265 Native Wrapper - Performance Profiling")
+        print("="*70)
+        print(f"Stage: {stage}")
+        print(f"Resolution: {width}x{height}")
+        print(f"Frame pairs processed: {len(profile_data['total_per_pair'])}")
+        print("\nPer-frame-pair timing breakdown:")
+        print(f"  1. YUV conversion:      {np.mean(profile_data['yuv_conversion'])*1000:7.2f}ms  (RGB→YUV I420)")
+        print(f"  2. Encoder open/reset:  {np.mean(profile_data['encoder_open'])*1000:7.2f}ms  (first: open, rest: reset)")
+        print(f"  3. Struct filling:      {np.mean(profile_data['struct_filling'])*1000:7.2f}ms  (x265_picture setup)")
+        print(f"  4. X265 encode calls:   {np.mean(profile_data['x265_encode_call'])*1000:7.2f}ms  (2x x265_encoder_encode)")
+        print(f"  5. Encoder flush:       {np.mean(profile_data['encoder_flush'])*1000:7.2f}ms  (x265_encoder_encode NULL)")
+        print(f"  6. Flow copy:           {np.mean(profile_data['flow_copy'])*1000:7.2f}ms  (np.copy)")
+        print(f"  7. Tensor conversion:   {np.mean(profile_data['tensor_conversion'])*1000:7.2f}ms  (numpy→torch + to(device))")
+        print(f"  " + "-"*60)
+        print(f"  Total per pair:         {np.mean(profile_data['total_per_pair'])*1000:7.2f}ms  ± {np.std(profile_data['total_per_pair'])*1000:.2f}ms")
+
+        print(f"\nPerformance analysis:")
+        total_mean = np.mean(profile_data['total_per_pair'])
+        encode_time = np.mean(profile_data['x265_encode_call']) + np.mean(profile_data['encoder_flush'])
+        encoder_open_reset = np.mean(profile_data['encoder_open'])
+        x265_total = encode_time + encoder_open_reset
+        overhead = (np.mean(profile_data['yuv_conversion']) +
+                   np.mean(profile_data['struct_filling']) +
+                   np.mean(profile_data['flow_copy']) +
+                   np.mean(profile_data['tensor_conversion']))
+
+        print(f"  X265 encoding (encode+flush):   {encode_time*1000:7.2f}ms ({encode_time/total_mean*100:.1f}%)")
+        print(f"  Encoder open/reset:             {encoder_open_reset*1000:7.2f}ms ({encoder_open_reset/total_mean*100:.1f}%)")
+        print(f"  Total X265 time:                {x265_total*1000:7.2f}ms ({x265_total/total_mean*100:.1f}%)")
+        print(f"  Python/ctypes overhead:         {overhead*1000:7.2f}ms ({overhead/total_mean*100:.1f}%)")
+        print("="*70 + "\n")
+
+    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset, stage='lookahead', profile_data=None):
+        import time
+
+        # Resize frames if needed
         if frame0.shape[:2] != (height, width):
             frame0 = cv2.resize(frame0, (width, height))
         if frame1.shape[:2] != (height, width):
             frame1 = cv2.resize(frame1, (width, height))
 
-        # Convert BGR to YUV I420
+        # 1. Convert BGR to YUV I420
+        t_yuv_start = time.perf_counter() if profile_data is not None else None
         yuv0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2YUV_I420)
         yuv1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2YUV_I420)
+        if profile_data is not None:
+            profile_data['yuv_conversion'].append(time.perf_counter() - t_yuv_start)
 
+        # 2. Get or create encoder (reuse with reset)
+        t_open_start = time.perf_counter() if profile_data is not None else None
         encoder, collector = self._get_or_create_encoder(width, height, fps, preset, stage)
+        if profile_data is not None:
+            profile_data['encoder_open'].append(time.perf_counter() - t_open_start)
 
-        self._encode_yuv_frame(encoder, yuv0, width, height, 0)
-        self._encode_yuv_frame(encoder, yuv1, width, height, 1)
+        # 3. Encode both frames
+        t_encode_start = time.perf_counter() if profile_data is not None else None
+        self._encode_yuv_frame(encoder, yuv0, width, height, 0, profile_data)
+        self._encode_yuv_frame(encoder, yuv1, width, height, 1, profile_data)
+        if profile_data is not None:
+            profile_data['x265_encode_call'].append(time.perf_counter() - t_encode_start)
+
+        # 4. Flush encoder
+        t_flush_start = time.perf_counter() if profile_data is not None else None
         self._flush_encoder(encoder)
 
-        return collector.get_flow(1)
+        if profile_data is not None:
+            profile_data['encoder_flush'].append(time.perf_counter() - t_flush_start)
 
-    def _encode_yuv_frame(self, encoder, yuv_data, width, height, poc):
+        # 6. Get flow (copy)
+        t_copy_start = time.perf_counter() if profile_data is not None else None
+        flow = collector.get_flow(1)
+        if profile_data is not None:
+            profile_data['flow_copy'].append(time.perf_counter() - t_copy_start)
+
+        return flow
+
+    def _encode_yuv_frame(self, encoder, yuv_data, width, height, poc, profile_data=None):
+        import time
+
+        # 3a. Allocate and fill x265_picture struct
+        t_struct_start = time.perf_counter() if profile_data is not None else None
+
         pic = encoder.lib.x265_picture_alloc()
         if not pic:
             raise RuntimeError("Failed to allocate x265_picture")
@@ -417,6 +570,10 @@ class X265NativeWrapper:
 
             pic_struct.poc = poc
 
+            if profile_data is not None:
+                profile_data['struct_filling'].append(time.perf_counter() - t_struct_start)
+
+            # 3b. Call x265_encoder_encode
             pp_nal = c_void_p()
             pi_nal = c_uint32()
             ret = encoder.lib.x265_encoder_encode(
