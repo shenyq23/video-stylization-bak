@@ -172,7 +172,8 @@ class X265NativeEncoder:
 
         if lib_path is None:
             project_root = Path(__file__).parent.parent
-            lib_path = project_root / "deps" / "x265" / "build" / "linux-dynamic" / "libx265.so"
+            # lib_path = project_root / "deps" / "x265" / "build" / "linux-dynamic" / "libx265.so"
+            lib_path = project_root / "bin" / "libx265.so"
             lib_path = str(lib_path)
 
         if not os.path.exists(lib_path):
