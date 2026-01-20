@@ -4,38 +4,8 @@ import numpy as np
 import cv2
 import torch
 from pathlib import Path
-from ctypes import CDLL, CFUNCTYPE, Structure, POINTER
-from ctypes import c_int, c_uint, c_uint8, c_uint32, c_uint64, c_longlong, c_float, c_double, c_void_p, c_char_p
-
-
-# Per-block callback
-# void (*callback)(int poc, int x, int y, int w, int h,
-#                  float mvx, float mvy, int deltapoc, void* user_data)
-MV_CALLBACK_FUNC = CFUNCTYPE(
-    None,
-    c_int,    # poc
-    c_int,    # x
-    c_int,    # y
-    c_int,    # w
-    c_int,    # h
-    c_float,  # mvx
-    c_float,  # mvy
-    c_int,    # deltapoc
-    c_void_p  # user_data
-)
-
-# Per-frame callback
-MV_FRAME_CALLBACK_FUNC = CFUNCTYPE(
-    None,
-    c_int,              # poc
-    c_int,              # width
-    c_int,              # height
-    c_int,              # block_size
-    POINTER(c_float),   # mvx_array
-    POINTER(c_float),   # mvy_array
-    POINTER(c_int),     # deltapoc_array
-    c_void_p            # user_data
-)
+from ctypes import CDLL, Structure, POINTER
+from ctypes import c_int, c_uint, c_uint8, c_uint32, c_uint64, c_longlong, c_float, c_void_p, c_char_p
 
 
 class x265_nal(Structure):
@@ -75,89 +45,41 @@ class x265_picture(Structure):
 
 
 class MVCollector:
-    def __init__(self, width, height):
+    def __init__(self, width, height, enable_deltapoc=True):
         self.width = width
         self.height = height
+        self.enable_deltapoc = enable_deltapoc
 
-        # PRE-ALLOCATED BUFFERS
+        # Pre-allocated buffers
         self.mvx_buffer = np.zeros((height, width), dtype=np.float32)
         self.mvy_buffer = np.zeros((height, width), dtype=np.float32)
-        # self.deltapoc_buffer = np.zeros((height, width), dtype=np.int32)
+        self.deltapoc_buffer = np.zeros((height, width), dtype=np.int32) if enable_deltapoc else None
 
-        # callback to be deleted
+        # Flow output array [2, H, W]
         self.flow = np.zeros((2, height, width), dtype=np.float32)
-        self.callback_count = 0
 
     def get_output_pointers(self):
         """Return C-compatible pointers to pre-allocated buffers for x265"""
-        # NULL for deltapoc
+        deltapoc_ptr = self.deltapoc_buffer.ctypes.data_as(POINTER(c_int)) if self.deltapoc_buffer is not None else None
         return (
             self.mvx_buffer.ctypes.data_as(POINTER(c_float)),
             self.mvy_buffer.ctypes.data_as(POINTER(c_float)),
-            None
+            deltapoc_ptr
         )
 
-    def block_callback(self, poc, x, y, w, h, mvx, mvy, deltapoc, user_data):
-        if poc == 0:
-            return
-
-        # Ensure block is within bounds
-        x_end = min(x + w, self.width)
-        y_end = min(y + h, self.height)
-
-        if x >= self.width or y >= self.height:
-            return
-
-        # mvx/mvy are in pixels precision
-        self.flow[0, y:y_end, x:x_end] = mvx
-        self.flow[1, y:y_end, x:x_end] = mvy
-
-        self.callback_count += 1
-
-    def frame_callback(self, poc, width, height, block_size, mvx_ptr, mvy_ptr, deltapoc_ptr, user_data):
-        if poc == 0:
-            return
-
-        if block_size == 1:
-            # x265 already upsampled to full-resolution
-            mvx_full = np.ctypeslib.as_array(mvx_ptr, shape=(height, width))
-            mvy_full = np.ctypeslib.as_array(mvy_ptr, shape=(height, width))
-
-            self.flow[0] = mvx_full
-            self.flow[1] = mvy_full
-            self.callback_count = height * width
-
-        else:
-            blocks_x = (width + block_size - 1) // block_size
-            blocks_y = (height + block_size - 1) // block_size
-            num_blocks = blocks_x * blocks_y
-
-            # numpy view from C pointers
-            mvx_arr = np.ctypeslib.as_array(mvx_ptr, shape=(num_blocks,))
-            mvy_arr = np.ctypeslib.as_array(mvy_ptr, shape=(num_blocks,))
-
-            mvx_2d = mvx_arr.reshape(blocks_y, blocks_x)
-            mvy_2d = mvy_arr.reshape(blocks_y, blocks_x)
-
-            mvx_full = np.repeat(np.repeat(mvx_2d, block_size, axis=0), block_size, axis=1)
-            mvy_full = np.repeat(np.repeat(mvy_2d, block_size, axis=0), block_size, axis=1)
-
-            # crop
-            self.flow[0] = mvx_full[:self.height, :self.width]
-            self.flow[1] = mvy_full[:self.height, :self.width]
-            self.callback_count = num_blocks
-
-    callback = block_callback
-
     def get_flow(self, poc):
-        # already filled, return directly
+        """Return motion vectors (already filled by x265 via preallocate)"""
         self.flow[0] = self.mvx_buffer
         self.flow[1] = self.mvy_buffer
         return self.flow
 
     def reset(self):
+        """Reset buffers for next frame"""
+        self.mvx_buffer.fill(0)
+        self.mvy_buffer.fill(0)
+        if self.deltapoc_buffer is not None:
+            self.deltapoc_buffer.fill(0)
         self.flow.fill(0)
-        self.callback_count = 0
 
 
 class X265NativeEncoder:
@@ -172,7 +94,6 @@ class X265NativeEncoder:
 
         if lib_path is None:
             project_root = Path(__file__).parent.parent
-            # lib_path = project_root / "deps" / "x265" / "build" / "linux-dynamic" / "libx265.so"
             lib_path = project_root / "bin" / "libx265.so"
             lib_path = str(lib_path)
 
@@ -206,15 +127,7 @@ class X265NativeEncoder:
         lib.x265_param_parse.restype = c_int
         lib.x265_param_parse.argtypes = [c_void_p, c_char_p, c_char_p]
 
-        # per-block callback
-        lib.x265_param_set_mv_callback.restype = None
-        lib.x265_param_set_mv_callback.argtypes = [c_void_p, MV_CALLBACK_FUNC, c_void_p]
-
-        # per-frame callback
-        lib.x265_param_set_mv_frame_callback.restype = None
-        lib.x265_param_set_mv_frame_callback.argtypes = [c_void_p, MV_FRAME_CALLBACK_FUNC, c_void_p]
-
-        # pre-allocated output pointers
+        # Pre-allocated output pointers
         lib.x265_param_set_output_ptrs.restype = None
         lib.x265_param_set_output_ptrs.argtypes = [
             c_void_p, POINTER(c_float), POINTER(c_float), POINTER(c_int), c_int, c_int
@@ -226,9 +139,6 @@ class X265NativeEncoder:
 
         lib.x265_encoder_close.restype = None
         lib.x265_encoder_close.argtypes = [c_void_p]
-
-        lib.x265_profiling_lookahead.restype = None
-        lib.x265_profiling_lookahead.argtypes = [c_void_p]
 
         # x265_encoder_reset function
         lib.x265_encoder_reset.restype = c_int
@@ -254,9 +164,7 @@ class X265NativeEncoder:
             c_void_p
         ]
 
-    def open_encoder(self, width, height, fps, preset="medium", tune=None,
-                     callback=None, frame_callback=None, user_data=None,
-                     stage='lookahead', **params):
+    def open_encoder(self, width, height, fps, preset="medium", tune=None, **params):
         # Allocate and initialize parameters
         self.param = self.lib.x265_param_alloc()
         if not self.param:
@@ -268,47 +176,24 @@ class X265NativeEncoder:
         if ret != 0:
             raise RuntimeError(f"Failed to set preset: {preset}")
 
+        # basic params
         self.lib.x265_param_parse(self.param, b"input-res", f"{width}x{height}".encode())
         self.lib.x265_param_parse(self.param, b"fps", str(fps).encode())
 
-        print_motion_info = b"1" if stage == 'lookahead' else b"2"
-        self.lib.x265_param_parse(self.param, b"print-motion-info", print_motion_info)
-
-        if stage == 'lookahead':
-            self.lib.x265_param_parse(self.param, b"skip-lookahead-intra", b"1")
-            self.lib.x265_param_parse(self.param, b"skip-lookahead-slicetype", b"1")
-            # self.lib.x265_param_parse(self.param, b"profile-lookahead", b"1")
-            # self.lib.x265_param_parse(self.param, b"log-level", b"info")
-            self.lib.x265_param_parse(self.param, b"lookahead-threads", b"8")
-            self.lib.x265_param_parse(self.param, b"lookahead-slices", b"8")
-            self.lib.x265_param_parse(self.param, b"motion-only", b"1")
-
-        use_preallocated = False
+        # pre-allocated buffers
         if hasattr(self, '_output_collector') and self._output_collector:
-            try:
-                mvx_ptr, mvy_ptr, deltapoc_ptr = self._output_collector.get_output_pointers()
-                self.lib.x265_param_set_output_ptrs(
-                    self.param, mvx_ptr, mvy_ptr, deltapoc_ptr, width, height
-                )
-                print(f"  Pre-allocated output: ENABLED (zero-copy, no callback!)")
-                use_preallocated = True
-            except AttributeError:
-                print(f"  Falling back to callback mode...")
-            except Exception as e:
-                print(f"  Falling back to callback mode...")
-
-        # set callback if not using pre-allocated
-        if not use_preallocated:
-            if frame_callback:
-                cb_func = MV_FRAME_CALLBACK_FUNC(frame_callback)
-                self.lib.x265_param_set_mv_frame_callback(self.param, cb_func, user_data)
-                self._callback_func = cb_func
-            elif callback:
-                cb_func = MV_CALLBACK_FUNC(callback)
-                self.lib.x265_param_set_mv_callback(self.param, cb_func, user_data)
-                self._callback_func = cb_func
+            mvx_ptr, mvy_ptr, deltapoc_ptr = self._output_collector.get_output_pointers()
+            self.lib.x265_param_set_output_ptrs(
+                self.param, mvx_ptr, mvy_ptr, deltapoc_ptr, width, height
+            )
+            stage = params.get('stage', 'unknown')
+            print(f"  Zero-IO preallocated output: ENABLED (stage={stage})")
+        else:
+            print(f"  Warning: No output collector set, motion vectors will not be captured!")
 
         for key, value in params.items():
+            if key == 'stage':
+                continue
             key_bytes = key.encode('utf-8')
             value_bytes = str(value).encode('utf-8')
             self.lib.x265_param_parse(self.param, key_bytes, value_bytes)
@@ -349,8 +234,8 @@ class X265NativeWrapper:
         self._encoder_config = None
         self._collector = None
 
-    def _get_or_create_encoder(self, width, height, fps, preset, stage):
-        config = (width, height, fps, preset, stage)
+    def _get_or_create_encoder(self, width, height, fps, preset, stage, **extra_params):
+        config = (width, height, fps, preset, stage, tuple(sorted(extra_params.items())))
 
         # reset if config changed
         if self._encoder is not None and self._encoder_config == config:
@@ -363,16 +248,38 @@ class X265NativeWrapper:
             self._encoder.close_encoder()
 
         # create new
-        self._collector = MVCollector(width, height)
+        self._collector = MVCollector(width, height, enable_deltapoc=True)
         self._encoder = X265NativeEncoder(self.lib_path)
         self._encoder._output_collector = self._collector
+
+        x265_params = {
+            'stage': stage,
+            'frames': 2,
+        }
+
+        if stage == 'lookahead':
+            x265_params['print-motion-info'] = 1  # lookahead_flag=True
+            x265_params['skip-lookahead-intra'] = 1
+            x265_params['skip-lookahead-slicetype'] = 1
+            x265_params['lookahead-threads'] = 8
+            x265_params['lookahead-slices'] = 8
+            x265_params['motion-only'] = 1
+        else:  # encode
+            x265_params['print-motion-info'] = 2  # encoding_flag=True
+
+        enable_p_intra = extra_params.get('enable_p_intra', False)
+        if not enable_p_intra:
+            x265_params['no-p-intra'] = 1
+
+        for key in ['ctu', 'crf']:
+            if key in extra_params:
+                x265_params[key] = extra_params[key]
+
         self._encoder.open_encoder(
             width, height, fps,
             preset=preset,
-            tune='zerolatency',
-            frame_callback=self._collector.frame_callback,
-            stage=stage,
-            frames=2
+            tune=None,
+            **x265_params
         )
         self._encoder_config = config
 
@@ -400,6 +307,11 @@ class X265NativeWrapper:
         enable_profile = kwargs.get('profile', False)
         if stage not in ['lookahead', 'encode']:
             raise ValueError(f"Invalid stage: {stage}. Must be 'lookahead' or 'encode'")
+
+        x265_params = {}
+        for key in ['ctu', 'crf', 'enable_p_intra']:
+            if key in kwargs:
+                x265_params[key] = kwargs[key]
 
         num_frames = len(frames)
 
@@ -435,7 +347,8 @@ class X265NativeWrapper:
                 flow = self._encode_frame_pair(
                     frames[ref_idx], frames[idx],
                     width, height, fps, preset, stage,
-                    profile_data=profile_data
+                    profile_data=profile_data,
+                    **x265_params
                 )
 
                 if enable_profile:
@@ -494,7 +407,7 @@ class X265NativeWrapper:
         print(f"  Python/ctypes overhead:         {overhead*1000:7.2f}ms ({overhead/total_mean*100:.1f}%)")
         print("="*70 + "\n")
 
-    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset, stage='lookahead', profile_data=None):
+    def _encode_frame_pair(self, frame0, frame1, width, height, fps, preset, stage='lookahead', profile_data=None, **x265_params):
         import time
 
         # Resize frames if needed
@@ -512,7 +425,7 @@ class X265NativeWrapper:
 
         # 2. Get or create encoder (reuse with reset)
         t_open_start = time.perf_counter() if profile_data is not None else None
-        encoder, collector = self._get_or_create_encoder(width, height, fps, preset, stage)
+        encoder, collector = self._get_or_create_encoder(width, height, fps, preset, stage, **x265_params)
         if profile_data is not None:
             profile_data['encoder_open'].append(time.perf_counter() - t_open_start)
 
