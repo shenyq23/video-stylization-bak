@@ -140,10 +140,6 @@ class X265NativeEncoder:
         lib.x265_encoder_close.restype = None
         lib.x265_encoder_close.argtypes = [c_void_p]
 
-        # x265_encoder_reset function
-        lib.x265_encoder_reset.restype = c_int
-        lib.x265_encoder_reset.argtypes = [c_void_p]
-
         # x265_picture_* functions
         lib.x265_picture_alloc.restype = c_void_p
         lib.x265_picture_alloc.argtypes = []
@@ -204,14 +200,6 @@ class X265NativeEncoder:
 
         return True
 
-    def reset_encoder(self):
-        if not self.encoder:
-            raise RuntimeError("Encoder not open")
-        ret = self.lib.x265_encoder_reset(self.encoder)
-        if ret < 0:
-            raise RuntimeError(f"Failed to reset encoder, return code: {ret}")
-        return True
-
     def close_encoder(self):
         if self.encoder:
             self.lib.x265_encoder_close(self.encoder)
@@ -237,18 +225,18 @@ class X265NativeWrapper:
     def _get_or_create_encoder(self, width, height, fps, preset, stage, **extra_params):
         config = (width, height, fps, preset, stage, tuple(sorted(extra_params.items())))
 
-        # reset if config changed
-        if self._encoder is not None and self._encoder_config == config:
-            self._encoder.reset_encoder()
-            self._collector.reset()
-            return self._encoder, self._collector
+        use_preallocate = extra_params.pop('use_preallocate', True)
 
-        # close old if exists
         if self._encoder is not None:
             self._encoder.close_encoder()
+            self._encoder = None
 
-        # create new
-        self._collector = MVCollector(width, height, enable_deltapoc=True)
+        if use_preallocate:
+            # PIXEL dimensions
+            self._collector = MVCollector(width, height, enable_deltapoc=True)
+        else:
+            self._collector = None
+
         self._encoder = X265NativeEncoder(self.lib_path)
         self._encoder._output_collector = self._collector
 
