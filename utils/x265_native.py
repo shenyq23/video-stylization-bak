@@ -334,12 +334,12 @@ class X265NativeWrapper:
             for ref_idx in ref_idx_list:
                 if ref_idx < 0 or ref_idx >= num_frames:
                     continue
+                if ref_idx == idx:
+                    continue
 
-                # Encode frame pair: [ref_frame, current_frame]
-                # This produces motion from ref_frame -> current_frame
                 t_pair_start = time.perf_counter() if enable_profile else None
 
-                flow = self._encode_frame_pair(
+                backward_flow = self._encode_frame_pair(
                     frames[ref_idx], frames[idx],
                     width, height, fps, preset, stage,
                     profile_data=profile_data,
@@ -351,16 +351,32 @@ class X265NativeWrapper:
 
                 # Tensor conversion timing
                 t_tensor_start = time.perf_counter() if enable_profile else None
-                flow_tensor = torch.from_numpy(flow).to(self.device)
+                backward_flow_tensor = torch.from_numpy(backward_flow).to(self.device)
                 if enable_profile:
                     profile_data['tensor_conversion'].append(time.perf_counter() - t_tensor_start)
 
-                if ref_idx < idx:
-                    # ref_idx -> idx: this is backward flow for frame idx
-                    backward_flows[idx] = flow_tensor
-                elif ref_idx > idx:
-                    # ref_idx -> idx: this is forward flow for frame idx
-                    forward_flows[idx] = flow_tensor
+                backward_flows[idx] = backward_flow_tensor
+
+                # Encode FORWARD direction: [current_frame, ref_frame] → POC{idx}→POC{ref}
+                t_pair_start = time.perf_counter() if enable_profile else None
+
+                forward_flow = self._encode_frame_pair(
+                    frames[idx], frames[ref_idx],
+                    width, height, fps, preset, stage,
+                    profile_data=profile_data,
+                    **x265_params
+                )
+
+                if enable_profile:
+                    profile_data['total_per_pair'].append(time.perf_counter() - t_pair_start)
+
+                # Tensor conversion timing
+                t_tensor_start = time.perf_counter() if enable_profile else None
+                forward_flow_tensor = torch.from_numpy(forward_flow).to(self.device)
+                if enable_profile:
+                    profile_data['tensor_conversion'].append(time.perf_counter() - t_tensor_start)
+
+                forward_flows[idx] = forward_flow_tensor
 
         # Print profiling summary
         if enable_profile and profile_data['total_per_pair']:
