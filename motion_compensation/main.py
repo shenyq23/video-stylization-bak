@@ -142,12 +142,14 @@ def main(args):
             print("Skipping computation. Use a different config or delete the directory to recompute.")
             return
 
-        flow_model = FlowModelClass(args.device)
-        ref_frame_idx_list = [0] + [(i - 1) // args.batch_size * args.batch_size for i in range(1, len(frames))]
-
         native_x265 = getattr(args, 'native_x265', False)
+
         if args.flow_model == "x265" or args.flow_model == "mix":
             flow_model = FlowModelClass(args.device, native_x265=native_x265)
+        else:
+            flow_model = FlowModelClass(args.device)
+
+        ref_frame_idx_list = [0] + [(i - 1) // args.batch_size * args.batch_size for i in range(1, len(frames))]
 
         # Compute optical flow for warping
         if args.flow_model == "x265" or args.flow_model == "mix":

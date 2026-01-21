@@ -301,17 +301,24 @@ class X265NativeWrapper:
         # Parse parameters
         size_str = kwargs.get('size', f"{frames[0].shape[1]}x{frames[0].shape[0]}")
         width, height = map(int, size_str.split('x'))
-        fps = kwargs.get('fps', 30)
+        fps = kwargs.get('frame_rate', 30)
         preset = kwargs.get('preset', 'medium')
         stage = kwargs.get('stage', 'lookahead')
         enable_profile = kwargs.get('profile', False)
         if stage not in ['lookahead', 'encode']:
             raise ValueError(f"Invalid stage: {stage}. Must be 'lookahead' or 'encode'")
 
-        x265_params = {}
-        for key in ['ctu', 'crf', 'enable_p_intra']:
-            if key in kwargs:
-                x265_params[key] = kwargs[key]
+        x265_params = {
+            'ctu': kwargs.get('ctu', 16),      # same as binary mode
+            'crf': kwargs.get('crf', 23),      # same as binary mode
+        }
+
+        if 'enable_p_intra' in kwargs:
+            x265_params['enable_p_intra'] = kwargs['enable_p_intra']
+
+        # Handle use_preallocate separately (will be popped in _get_or_create_encoder)
+        if 'use_preallocate' in kwargs:
+            x265_params['use_preallocate'] = kwargs['use_preallocate']
 
         num_frames = len(frames)
 
@@ -469,11 +476,11 @@ class X265NativeWrapper:
             y_size = height * width
             uv_size = (height // 2) * (width // 2)
 
-            yuv_data = np.ascontiguousarray(yuv_data)
-
-            y_plane = yuv_data[:y_size]
-            u_plane = yuv_data[y_size:y_size + uv_size]
-            v_plane = yuv_data[y_size + uv_size:]
+            # Flatten yuv_data to 1D array and ensure contiguous
+            yuv_flat = np.ascontiguousarray(yuv_data.flatten())
+            y_plane = np.ascontiguousarray(yuv_flat[:y_size])
+            u_plane = np.ascontiguousarray(yuv_flat[y_size:y_size + uv_size])
+            v_plane = np.ascontiguousarray(yuv_flat[y_size + uv_size:y_size + 2*uv_size])
 
             pic_struct.planes[0] = y_plane.ctypes.data_as(c_void_p)
             pic_struct.planes[1] = u_plane.ctypes.data_as(c_void_p)
