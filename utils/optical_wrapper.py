@@ -65,9 +65,9 @@ class OcclusionComputation:
 
         diff_fwd = torch.norm(forward_flow + warped_bwd_flow, dim=1)  # [B, H, W]
         diff_bwd = torch.norm(backward_flow + warped_fwd_flow, dim=1)
-        
+
         return diff_fwd, diff_bwd
-    
+
     @staticmethod
     def luminosity_error(src_frame, tgt_frame, forward_flow, backward_flow):
         # Forward occlusion: warp target with forward flow, compare to source
@@ -77,7 +77,7 @@ class OcclusionComputation:
         # Backward occlusion: warp source with backward flow, compare to target
         warped_source = flow_warp(src_frame, backward_flow)
         backward_photo_error = torch.abs(tgt_frame - warped_source).mean(dim=1)  # [N, H, W]
-        
+
         return forward_photo_error, backward_photo_error
 
     @staticmethod
@@ -93,7 +93,7 @@ class OcclusionComputation:
         # Use max across channels for color sensitivity
         forward_color_error = forward_color_error.max(dim=1)[0]  # [N, H, W]
         backward_color_error = backward_color_error.max(dim=1)[0]  # [N, H, W]
-        
+
         return forward_color_error, backward_color_error
 
     @staticmethod
@@ -127,7 +127,7 @@ class OcclusionComputation:
         tgt_grad = compute_gradients(tgt_frame)
         warped_src_grad = compute_gradients(warped_source)
         backward_struct_error = torch.abs(tgt_grad - warped_src_grad).mean(dim=1)  # [N, H, W]
-        
+
         return forward_struct_error, backward_struct_error
 
     def __call__(self, src_frame, tgt_frame, forward_flow, backward_flow):
@@ -478,6 +478,9 @@ class X265MVWrapper(OpticalFlowWrapper):
                     frame_rate=kwargs.get("frame_rate", None),
                     lookahead_flag=True,
                     encoding_flag=True,
+                    enable_p_intra=kwargs.get("enable_p_intra", False),
+                    ctu=kwargs.get("ctu", 16),
+                    crf=kwargs.get("crf", 23),
                 )
                 X265MVWrapper._update_flow(log_path, forward_flows, idx, granularity)
 
