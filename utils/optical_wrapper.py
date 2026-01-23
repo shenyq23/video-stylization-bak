@@ -421,6 +421,14 @@ class X265MVWrapper(OpticalFlowWrapper):
         height = int(kwargs["size"].split("x")[1])
         forward_flows = np.zeros((len(frames), 2, height, width), dtype=np.float32)
         backward_flows = np.zeros((len(frames), 2, height, width), dtype=np.float32)
+
+        x265_params = {
+            "preset": kwargs.get("preset", "fast"),
+            "ctu": kwargs.get("ctu", 16),
+            "crf": kwargs.get("crf", 23),
+            "enable_p_intra": kwargs.get("enable_p_intra", False),
+        }
+
         with tempfile.TemporaryDirectory() as tempdir:
             log_root = os.path.join(tempdir, "x265_logs")
             for idx, ref_idx in enumerate(ref_frame_idx_list):
@@ -443,20 +451,18 @@ class X265MVWrapper(OpticalFlowWrapper):
                 with open(yuv_file_path, "wb") as f:
                     f.write(cv2.cvtColor(source_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
                     f.write(cv2.cvtColor(target_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
+
                 self.encoder.encode(
                     input_path=yuv_file_path,
                     output_path="/dev/null",
                     log_base_name=log_base_name,
                     log_root=log_root,
                     frame_cnt=2,
-                    preset=kwargs.get("preset", "fast"),
                     size=kwargs.get("size", None),
                     frame_rate=kwargs.get("frame_rate", None),
                     lookahead_flag=True,
                     encoding_flag=True,
-                    enable_p_intra=kwargs.get("enable_p_intra", False),
-                    ctu=kwargs.get("ctu", 16),
-                    crf=kwargs.get("crf", 23),
+                    x265_params=x265_params,
                 )
                 X265MVWrapper._update_flow(log_path, backward_flows, idx, granularity)
 
@@ -467,20 +473,18 @@ class X265MVWrapper(OpticalFlowWrapper):
                 with open(yuv_file_path, "wb") as f:
                     f.write(cv2.cvtColor(target_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
                     f.write(cv2.cvtColor(source_frame, cv2.COLOR_BGR2YUV_I420).tobytes())
+
                 self.encoder.encode(
                     input_path=yuv_file_path,
                     output_path="/dev/null",
                     log_base_name=log_base_name,
                     log_root=log_root,
                     frame_cnt=2,
-                    preset=kwargs.get("preset", "fast"),
                     size=kwargs.get("size", None),
                     frame_rate=kwargs.get("frame_rate", None),
                     lookahead_flag=True,
                     encoding_flag=True,
-                    enable_p_intra=kwargs.get("enable_p_intra", False),
-                    ctu=kwargs.get("ctu", 16),
-                    crf=kwargs.get("crf", 23),
+                    x265_params=x265_params,
                 )
                 X265MVWrapper._update_flow(log_path, forward_flows, idx, granularity)
 
