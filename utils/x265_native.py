@@ -259,6 +259,10 @@ class X265NativeWrapper:
         if not enable_p_intra:
             x265_params['no-p-intra'] = 1
 
+        lookahead_intra = extra_params.get('lookahead_intra', False)
+        if not lookahead_intra:
+            x265_params['no-lookahead-intra'] = 1
+
         for key in ['ctu', 'crf']:
             if key in extra_params:
                 x265_params[key] = extra_params[key]

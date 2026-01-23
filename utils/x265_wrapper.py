@@ -7,6 +7,7 @@ class X265EncoderWrapper:
         "ctu": 16,
         "crf": 23,
         "enable_p_intra": False,
+        "lookahead_intra": False,
     }
 
     def __init__(self, encoder_path=None):
@@ -52,7 +53,10 @@ class X265EncoderWrapper:
         if not params["enable_p_intra"]:
             cmd = cmd.add_flag("no-p-intra", is_full=True, is_important=True)
 
-        handled_keys = {"preset", "ctu", "crf", "enable_p_intra"}
+        if not params["lookahead_intra"]:
+            cmd = cmd.add_flag("no-lookahead-intra", is_full=True, is_important=True)
+
+        handled_keys = {"preset", "ctu", "crf", "enable_p_intra", "lookahead_intra"}
         for key, value in params.items():
             if key not in handled_keys:
                 cli_key = key.replace("_", "-")
