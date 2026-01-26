@@ -28,6 +28,7 @@ class X265EncoderWrapper:
         lookahead_flag=True,
         encoding_flag=True,
         x265_params=None,
+        stage='lookahead',
     ):
         assert input_path[-4:] in [".yuv", ".y4m"]
 
@@ -55,6 +56,9 @@ class X265EncoderWrapper:
 
         if not params["lookahead_intra"]:
             cmd = cmd.add_flag("no-lookahead-intra", is_full=True, is_important=True)
+
+        if stage == 'lookahead':
+            cmd = cmd.add_flag("no-lookahead-encode", is_full=True, is_important=True)
 
         handled_keys = {"preset", "ctu", "crf", "enable_p_intra", "lookahead_intra"}
         for key, value in params.items():

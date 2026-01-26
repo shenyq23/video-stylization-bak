@@ -427,6 +427,7 @@ class X265MVWrapper(OpticalFlowWrapper):
             "ctu": kwargs.get("ctu", 16),
             "crf": kwargs.get("crf", 23),
             "enable_p_intra": kwargs.get("enable_p_intra", False),
+            "lookahead_intra": kwargs.get("lookahead_intra", False),
         }
 
         with tempfile.TemporaryDirectory() as tempdir:

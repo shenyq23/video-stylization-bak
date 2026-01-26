@@ -249,6 +249,7 @@ class X265NativeWrapper:
             x265_params['print-motion-info'] = 1  # lookahead_flag=True
             x265_params['skip-lookahead-intra'] = 1
             x265_params['skip-lookahead-slicetype'] = 1
+            x265_params['no-lookahead-encode'] = 1
             x265_params['lookahead-threads'] = 8
             x265_params['lookahead-slices'] = 8
             x265_params['motion-only'] = 1
