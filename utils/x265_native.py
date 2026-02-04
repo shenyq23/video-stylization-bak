@@ -140,6 +140,10 @@ class X265NativeEncoder:
         lib.x265_encoder_close.restype = None
         lib.x265_encoder_close.argtypes = [c_void_p]
 
+        # x265_encoder_reset: reset encoder state for reuse (from x265-reset-api.txt)
+        lib.x265_encoder_reset.restype = c_int
+        lib.x265_encoder_reset.argtypes = [c_void_p]
+
         # x265_picture_* functions
         lib.x265_picture_alloc.restype = c_void_p
         lib.x265_picture_alloc.argtypes = []
@@ -208,14 +212,40 @@ class X265NativeEncoder:
             self.lib.x265_param_free(self.param)
             self.param = None
 
+    def reset_encoder(self):
+        """
+        Reset encoder state for reuse without closing/reopening.
+        This is much faster than close + open for encoding multiple frame pairs.
+
+        Based on x265_encoder_reset API from x265-reset-api.txt:
+        - Clears lookahead queues
+        - Resets POC counters
+        - Resets DPB (decoded picture buffer)
+        - Reuses allocated memory and thread pools
+
+        Returns:
+            0 on success, -1 on failure
+        """
+        if not self.encoder:
+            return -1
+
+        ret = self.lib.x265_encoder_reset(self.encoder)
+
+        # Also reset output collector if present
+        if hasattr(self, '_output_collector') and self._output_collector:
+            self._output_collector.reset()
+
+        return ret
+
     def __del__(self):
         self.close_encoder()
 
 
 class X265NativeWrapper:
-    def __init__(self, device='cuda', lib_path=None):
+    def __init__(self, device='cuda', lib_path=None, reuse_encoder=False):
         self.device = device
         self.lib_path = lib_path
+        self.reuse_encoder = reuse_encoder
 
         # cached encoder
         self._encoder = None
@@ -223,10 +253,54 @@ class X265NativeWrapper:
         self._collector = None
 
     def _get_or_create_encoder(self, width, height, fps, preset, stage, **extra_params):
-        config = (width, height, fps, preset, stage, tuple(sorted(extra_params.items())))
+        """
+        Get or create encoder.
 
+        If reuse_encoder=True:
+        - If encoder exists and config matches: reset (fast ~2ms)
+        - If encoder exists but config differs: close + recreate (slow ~33ms)
+        - If no encoder: create new (slow ~33ms)
+
+        If reuse_encoder=False:
+        - Always create new encoder (original behavior)
+        """
+        config = (width, height, fps, preset, stage, tuple(sorted(extra_params.items())))
         use_preallocate = extra_params.pop('use_preallocate', True)
 
+        # always create new encoder
+        if not self.reuse_encoder:
+            if self._encoder is not None:
+                self._encoder.close_encoder()
+                self._encoder = None
+                self._encoder_config = None
+                self._collector = None
+
+            encoder = X265NativeEncoder(lib_path=self.lib_path)
+            collector = MVCollector(width, height, enable_deltapoc=True) if use_preallocate else None
+            self._collector = collector
+            return encoder, collector
+
+        can_reuse = (
+            self._encoder is not None and
+            self._encoder_config is not None and
+            self._encoder_config == config
+        )
+
+        if can_reuse:
+            ret = self._encoder.reset_encoder()
+            if ret == 0:
+                # Reset successful, reuse collector
+                if self._collector:
+                    self._collector.reset()
+                print(f"  [Encoder] RESET (fast path, config unchanged)")
+                return self._encoder, self._collector
+            else:
+                # Reset failed, fall back to recreation
+                print(f"  [Encoder] RESET FAILED (ret={ret}), recreating...")
+                self._encoder.close_encoder()
+                self._encoder = None
+
+        # Slow path: create new encoder
         if self._encoder is not None:
             self._encoder.close_encoder()
             self._encoder = None

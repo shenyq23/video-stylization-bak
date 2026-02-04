@@ -143,9 +143,10 @@ def main(args):
             return
 
         native_x265 = getattr(args, 'native_x265', False)
+        reuse_x265 = bool(getattr(args, 'reuse_x265', 1))
 
         if args.flow_model == "x265" or args.flow_model == "mix":
-            flow_model = FlowModelClass(args.device, native_x265=native_x265)
+            flow_model = FlowModelClass(args.device, native_x265=native_x265, reuse_x265_encoder=reuse_x265)
         else:
             flow_model = FlowModelClass(args.device)
 
@@ -160,7 +161,7 @@ def main(args):
         # Compute optical flow for occlusion (if using mix/reverse_mix)
         if args.flow_model == "mix" or args.flow_model == "reverse_mix":
             if args.flow_model == "reverse_mix":
-                occlusion_flow_model = OcclusionFlowModelClass(args.device, native_x265=native_x265)
+                occlusion_flow_model = OcclusionFlowModelClass(args.device, native_x265=native_x265, reuse_x265_encoder=reuse_x265)
             else:
                 occlusion_flow_model = OcclusionFlowModelClass(args.device)
             if args.flow_model == "reverse_mix":
@@ -377,6 +378,7 @@ if __name__ == "__main__":
     parser.add_argument("--diff_mode", type=str, default="heatmap", choices=["abs_rgb", "abs_gray", "heatmap"], help="Diff visualization mode")
     parser.add_argument("--diff_amplify", type=float, default=4.0, help="Amplify factor for diff (e.g., 4.0 makes small differences more visible)")
     parser.add_argument("--native_x265", action="store_true", help="Use native zero-IO x265 mode (eliminates file I/O for ~2.4x speedup)")
+    parser.add_argument("--reuse_x265", type=int, default=1, help="Reuse x265 encoder via reset (default: 1=enabled, 0=disabled; native mode only, reduces encoder open/close overhead)")
 
     args = parser.parse_args()
     main(args)

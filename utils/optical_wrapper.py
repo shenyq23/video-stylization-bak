@@ -367,15 +367,17 @@ class RAFTFlowWrapper(OpticalFlowWrapper):
             return [forward_flows, backward_flows], np.mean(elapsed_times) * 1000
 
 class X265MVWrapper(OpticalFlowWrapper):
-    def __init__(self, device, encoder_path=None, native_x265=False):
+    def __init__(self, device, encoder_path=None, native_x265=False, reuse_x265_encoder=False):
         """
             encoder_path: path to x265 encoder (for CSV mode)
+            reuse_x265_encoder: if True, reuse encoder via x265_encoder_reset (native mode only)
         """
         super().__init__(device)
         self.native_x265 = native_x265
+        self.reuse_x265_encoder = reuse_x265_encoder
         if native_x265:
             from utils.x265_native import X265NativeWrapper
-            self.native_wrapper = X265NativeWrapper(device=device)
+            self.native_wrapper = X265NativeWrapper(device=device, reuse_encoder=reuse_x265_encoder)
         else:
             self.encoder = X265EncoderWrapper(encoder_path)
 
