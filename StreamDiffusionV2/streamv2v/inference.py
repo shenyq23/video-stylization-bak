@@ -309,6 +309,7 @@ def load_mp4_as_tensor(
     max_frames: int = None,
     resize_hw: tuple[int, int] = None,
     normalize: bool = True,
+    device: str = 'cuda:0',
 ) -> tuple[torch.Tensor, int]: # <--- 修改: 更新返回类型提示
     assert os.path.exists(video_path), f"Video file not found: {video_path}"
     # <--- 修改: 捕获第三个返回值 info，其中包含元数据
@@ -322,6 +323,8 @@ def load_mp4_as_tensor(
     video = rearrange(video, "t c h w -> c t h w")
     if resize_hw is not None:
         c, t, h0, w0 = video.shape
+
+        video = video.to(device) if torch.cuda.is_available() and str(device).startswith('cuda') else video
         video = torch.stack([TF.resize(video[:, i], resize_hw, antialias=True) for i in range(t)], dim=1)
     if video.dtype != torch.float32:
         video = video.float()
@@ -792,7 +795,7 @@ def main():
             logging.warning(f"Adjusting resolution from {args.height}x{args.width} to {new_height}x{new_width}.")
         resize_hw = (new_height, new_width)
         args.height, args.width = new_height, new_width
-        input_video_original, original_fps = load_mp4_as_tensor(args.video_path, resize_hw=resize_hw)
+        input_video_original, original_fps = load_mp4_as_tensor(args.video_path, resize_hw=resize_hw, device=device)
 
         args.fps=original_fps
 
