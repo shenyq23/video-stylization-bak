@@ -78,8 +78,8 @@ class Command:
         
     def run(self):
         cmd = self.command_str()
-        print("[exec time] {}".format(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())))
-        print(self.display_str())
+        # print("[exec time] {}".format(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())))
+        # print(self.display_str())
 
         if self.output_path is None:
             os.system(cmd)

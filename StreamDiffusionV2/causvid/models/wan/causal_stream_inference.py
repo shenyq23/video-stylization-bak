@@ -9,18 +9,27 @@ import torch.distributed as dist
 import time
 
 class CausalStreamInferencePipeline(torch.nn.Module):
-    def __init__(self, args, device, text_encoder_on_cpu: bool = False):
+    def __init__(self, args, device, text_encoder_on_cpu: bool = False, use_cached_text_embedding: bool = False):
         super().__init__()
         model_type = args.model_type
         self.device = device
         self.text_encoder_on_cpu = text_encoder_on_cpu
+        # <--- NEW CODE START --->
+        self.use_cached_text_embedding = use_cached_text_embedding
+        # <--- NEW CODE END --->
         # Step 1: Initialize all models
         self.generator_model_name = getattr(
             args, "generator_name", args.model_name)
         self.generator = get_diffusion_wrapper(
             model_name=self.generator_model_name)(model_type=model_type)
-        self.text_encoder = get_text_encoder_wrapper(
-            model_name=args.model_name)(model_type=model_type)
+        
+        self.text_encoder = None
+        if not self.use_cached_text_embedding:
+            self.text_encoder = get_text_encoder_wrapper(
+                model_name=args.model_name)(model_type=model_type)
+        else:
+            print("Skipping Text Encoder initialization, will use cached embedding.")
+
         self.vae = get_vae_wrapper(model_name=args.model_name)(model_type=model_type)
 
         # Step 2: Initialize all causal hyperparmeters
@@ -57,6 +66,7 @@ class CausalStreamInferencePipeline(torch.nn.Module):
             self.generator.model.num_frame_per_block = self.num_frame_per_block
 
         # self.generator.model.to(self.device)
+        self.flow_guidance_cache = None
 
     def to(self, device=None, dtype=None, non_blocking=False):
         """
@@ -70,13 +80,14 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         self.vae.to(device=target_device, dtype=dtype, non_blocking=non_blocking)
 
         # B. 根据标志决定 text_encoder 的位置
-        if self.text_encoder_on_cpu:
-            # 确保 text_encoder 在 CPU 上，并使用 float32 (CPU 通常不支持 bfloat16)
-            self.text_encoder.to(device='cpu', dtype=torch.float32, non_blocking=non_blocking)
-            print("Text encoder is intentionally kept on CPU.")
-        else:
-            # 正常移动到 GPU
-            self.text_encoder.to(device=target_device, dtype=dtype, non_blocking=non_blocking)
+        if self.text_encoder is not None:
+            if self.text_encoder_on_cpu:
+                # 确保 text_encoder 在 CPU 上，并使用 float32 (CPU 通常不支持 bfloat16)
+                self.text_encoder.to(device='cpu', dtype=torch.float32, non_blocking=non_blocking)
+                print("Text encoder is intentionally kept on CPU.")
+            else:
+                # 正常移动到 GPU
+                self.text_encoder.to(device=target_device, dtype=dtype, non_blocking=non_blocking)
 
         # 更新 pipeline 的主设备属性
         self.device = target_device
@@ -146,14 +157,27 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         self.device = device
         batch_size = noise.shape[0]
 
-        if self.text_encoder_on_cpu:
-            conditional_dict_cpu = self.text_encoder(text_prompts=text_prompts)
-            self.conditional_dict = {
-                "prompt_embeds": conditional_dict_cpu["prompt_embeds"].to(device=self.device, dtype=dtype)
-            }
-            # print(f"Text embeddings generated on CPU and moved to {self.device}.")
+        cached_embedding_path = f"./text_cache/cached_text_embedding_{text_prompts[0][:20]}.pt"
+
+        if self.use_cached_text_embedding:
+            print(f"Attempting to load cached text embedding from '{cached_embedding_path}'...")
+            self.conditional_dict = torch.load(cached_embedding_path, map_location="cpu")
+            # Move the tensor to the correct device and dtype
+            self.conditional_dict["prompt_embeds"] = self.conditional_dict["prompt_embeds"].to(device=self.device, dtype=dtype)
+            print("Successfully loaded and prepared cached text embedding.")
         else:
-            self.conditional_dict = self.text_encoder(text_prompts=text_prompts)
+            # Original logic to compute and then save the embedding
+            if self.text_encoder_on_cpu:
+                conditional_dict_cpu = self.text_encoder(text_prompts=text_prompts)
+                self.conditional_dict = {
+                    "prompt_embeds": conditional_dict_cpu["prompt_embeds"].to(device=self.device, dtype=dtype)
+                }
+            else:
+                self.conditional_dict = self.text_encoder(text_prompts=text_prompts)
+
+            dict_to_save = {"prompt_embeds": self.conditional_dict["prompt_embeds"].cpu()}
+            torch.save(dict_to_save, cached_embedding_path)
+            print(f"Computed and saved text embedding to '{cached_embedding_path}'.")
 
         # Step 1: Initialize KV cache
         if self.kv_cache1 is None:
@@ -168,6 +192,7 @@ class CausalStreamInferencePipeline(torch.nn.Module):
                 dtype=dtype,
                 device=device
             )
+            self.flow_guidance_cache=torch.zeros([self.num_transformer_blocks,len(self.denoising_step_list), self.frame_seq_length, self.num_heads*128], dtype=dtype, device=device)
         else:
             # reset cross attn cache
             for block_index in range(self.num_transformer_blocks):
@@ -256,6 +281,13 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         self.hidden_states = torch.zeros(
             (self.batch_size, self.num_frame_per_block, *noise.shape[2:]), dtype=noise.dtype, device=device
         )
+        self.latent_flow_data = {}
+        self.latent_flow_data['flow']=torch.zeros(
+            (self.batch_size, 2, self.height//2,self.width//2), dtype= torch.float32, device=device
+        )
+        self.latent_flow_data['mask']=torch.zeros(
+            (self.batch_size, 1, self.height//2,self.width//2), dtype= torch.bool, device=device
+        )
 
         if block_mode in ['output', 'middle']:
             self.block_x = torch.zeros(
@@ -273,7 +305,7 @@ class CausalStreamInferencePipeline(torch.nn.Module):
     
         return denoised_pred
     
-    def inference_stream(self, noise: torch.Tensor, current_start: int, current_end: int, current_step: int) -> torch.Tensor:
+    def inference_stream(self, noise: torch.Tensor, current_start: int, current_end: int, current_step: int,latent_flow_data=None) -> torch.Tensor:
         # print(self.hidden_states.dtype,self.hidden_states.shape,self.kv_cache_starts.dtype,self.kv_cache_starts.shape,noise.shape)
         #torch.cuda.synchronize(device=self.device)
         inference_stream_start_time= time.time()
@@ -282,6 +314,14 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         self.hidden_states[0] = noise[0]
         self.kv_cache_starts[1:] = self.kv_cache_starts[:-1].clone()
         self.kv_cache_starts[0] = current_start
+
+        if (latent_flow_data!=None): 
+            # print("test dtype",self.latent_flow_data['flow'].dtype,latent_flow_data[0].dtype,self.latent_flow_data['mask'].dtype,latent_flow_data[1].dtype)
+            self.latent_flow_data['flow'][1:] = self.latent_flow_data['flow'][:-1].clone()
+            self.latent_flow_data['flow'][0] = latent_flow_data[0].squeeze(0)
+            self.latent_flow_data['mask'][1:] = self.latent_flow_data['mask'][:-1].clone()
+            self.latent_flow_data['mask'][0] = latent_flow_data[1].squeeze(0)
+
 
         # #torch.cuda.synchronize(device=self.device)
         # clone_end_time= time.time()
@@ -296,6 +336,8 @@ class CausalStreamInferencePipeline(torch.nn.Module):
             kv_cache=self.kv_cache1,
             crossattn_cache=self.crossattn_cache,
             current_start=self.kv_cache_starts,
+            flow_guidance_cache=self.flow_guidance_cache,
+            latent_flow_data=None if latent_flow_data==None else self.latent_flow_data,
             # current_end=self.kv_cache_ends,
         )
         #torch.cuda.synchronize(device=self.device)

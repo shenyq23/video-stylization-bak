@@ -1,0 +1,13 @@
+测试x265 warp latents：
+python3 -u streamv2v/inference.py --config_path configs/wan_causal_dmd_v2v.yaml --checkpoint_folder ckpts/wan_causal_dmd_v2v --output_folder outputs/ --prompt_file_path prompt.txt --video_path ../../videos/bird.mp4 --height 480 --width 832 --fps 16 --step 4 --flow_model x265 --top_k_percentage 0.10 --occlusion_method exact --x265_params '{"stage": "encode"}' --use_cached_text_embedding > log1.txt 
+
+预期FPS=6.52
+
+纯全量计算baseline：
+
+python3 -u streamv2v/inference.py --config_path configs/wan_causal_dmd_v2v.yaml --checkpoint_folder ckpts/wan_causal_dmd_v2v --output_folder outputs/ --prompt_file_path prompt.txt --video_path ../../videos/bird.mp4 --height 480 --width 832 --fps 16 --step 4  --top_k_percentage 0.10 --occlusion_method exact --x265_params '{"stage": "encode"}' --use_cached_text_embedding > log1.txt 
+
+预期FPS=6.97
+
+
+python3 test_optical.py --video_path ../../videos/bird.mp4  --output_folder ./visual  --x265_params '{"stage": "encode"}' --flow_model x265 --top_k_percentage 0.1 --occlusion_method quantile

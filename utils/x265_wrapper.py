@@ -50,6 +50,7 @@ class X265EncoderWrapper:
             .add_flag("frames", frame_cnt, is_important=True, is_full=True)
             .add_flag("ctu", params["ctu"], is_full=True, is_important=True)
             .add_flag("crf", params["crf"], is_full=True, is_important=True))
+            # .add_flag("log-level", "none", is_full=True, is_important=True))
 
         if not params["enable_p_intra"]:
             cmd = cmd.add_flag("no-p-intra", is_full=True, is_important=True)
@@ -77,7 +78,8 @@ class X265EncoderWrapper:
             cmd = (cmd
                 .add_flag("input-res", size, is_important=True, is_full=True)
                 .add_flag("fps", frame_rate, is_important=True, is_full=True))
-
+        tmp=cmd.command_str()
+        print(tmp)
         cmd.run()
 
 if __name__ == "__main__":

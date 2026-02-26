@@ -155,6 +155,41 @@ def main(args):
         # Compute optical flow for warping
         if args.flow_model == "x265" or args.flow_model == "mix":
             flows, _ = flow_model.compute_flow(frames, ref_frame_idx_list, size=size, frame_rate=fps, **x265_params)
+            # flows, _ = flow_model.compute_flow(frames, ref_frame_idx_list, size=size, frame_rate=fps, **x265_params)
+            # Print per-frame flow statistics for comparison
+            forward_flows_array = flows[0].cpu().numpy() if torch.is_tensor(flows[0]) else flows[0]
+            backward_flows_array = flows[1].cpu().numpy() if torch.is_tensor(flows[1]) else flows[1]
+            print(f"\n{'='*80}")
+            print(f"Flow Statistics (shape: {forward_flows_array.shape} = num_frames × channels × H × W)")
+            print(f"{'='*80}")
+            for i, ref_idx in enumerate(ref_frame_idx_list):
+                # Flow direction explanation:
+                # - Backward flow: motion from reference frame to current frame (ref → current)
+                # - Forward flow: motion from current frame back to reference (current → ref)
+                print(f"\n[Output Flow Index {i}]  Current=POC{i}, Reference=POC{ref_idx}")
+ 
+                # Backward flow: POC{ref_idx} → POC{i}
+                bwd_flow = backward_flows_array[i]
+                bwd_min, bwd_max = bwd_flow.min(), bwd_flow.max()
+                bwd_mean, bwd_std = bwd_flow.mean(), bwd_flow.std()
+                bwd_nonzero = np.count_nonzero(bwd_flow)
+                bwd_total = bwd_flow.size
+                bwd_ratio = bwd_nonzero / bwd_total * 100
+                print(f"  Bwd  (POC{ref_idx}→POC{i}):  range=[{bwd_min:8.4f}, {bwd_max:8.4f}]  "
+                      f"mean={bwd_mean:8.4f}  std={bwd_std:7.4f}  "
+                      f"nonzero={bwd_nonzero:7d}/{bwd_total:7d} ({bwd_ratio:5.1f}%)")
+
+                # Forward flow: POC{i} → POC{ref_idx}
+                fwd_flow = forward_flows_array[i]
+                fwd_min, fwd_max = fwd_flow.min(), fwd_flow.max()
+                fwd_mean, fwd_std = fwd_flow.mean(), fwd_flow.std()
+                fwd_nonzero = np.count_nonzero(fwd_flow)
+                fwd_total = fwd_flow.size
+                fwd_ratio = fwd_nonzero / fwd_total * 100
+                print(f"  Fwd  (POC{i}→POC{ref_idx}):  range=[{fwd_min:8.4f}, {fwd_max:8.4f}]  "
+                      f"mean={fwd_mean:8.4f}  std={fwd_std:7.4f}  "
+                      f"nonzero={fwd_nonzero:7d}/{fwd_total:7d} ({fwd_ratio:5.1f}%)")
+            print(f"{'='*80}\n")
         else:
             flows, _ = flow_model.compute_flow(frames, ref_frame_idx_list)
 

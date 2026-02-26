@@ -6,7 +6,7 @@ import torch
 from pathlib import Path
 from ctypes import CDLL, Structure, POINTER
 from ctypes import c_int, c_uint, c_uint8, c_uint32, c_uint64, c_longlong, c_float, c_void_p, c_char_p
-
+import time
 
 class x265_nal(Structure):
     """x265 NAL unit structure"""
@@ -140,10 +140,8 @@ class X265NativeEncoder:
         lib.x265_encoder_close.restype = None
         lib.x265_encoder_close.argtypes = [c_void_p]
 
-        # x265_encoder_reset: reset encoder state for reuse (from x265-reset-api.txt)
         lib.x265_encoder_reset.restype = c_int
         lib.x265_encoder_reset.argtypes = [c_void_p]
-
         # x265_picture_* functions
         lib.x265_picture_alloc.restype = c_void_p
         lib.x265_picture_alloc.argtypes = []
@@ -187,7 +185,7 @@ class X265NativeEncoder:
                 self.param, mvx_ptr, mvy_ptr, deltapoc_ptr, width, height
             )
             stage = params.get('stage', 'unknown')
-            print(f"  Zero-IO preallocated output: ENABLED (stage={stage})")
+            # print(f"  Zero-IO preallocated output: ENABLED (stage={stage})")
         else:
             print(f"  Warning: No output collector set, motion vectors will not be captured!")
 
@@ -236,7 +234,6 @@ class X265NativeEncoder:
             self._output_collector.reset()
 
         return ret
-
     def __del__(self):
         self.close_encoder()
 
@@ -245,6 +242,7 @@ class X265NativeWrapper:
     def __init__(self, device='cuda', lib_path=None, reuse_encoder=False):
         self.device = device
         self.lib_path = lib_path
+        reuse_encoder = False
         self.reuse_encoder = reuse_encoder
 
         # cached encoder
@@ -265,45 +263,37 @@ class X265NativeWrapper:
         - Always create new encoder (original behavior)
         """
         config = (width, height, fps, preset, stage, tuple(sorted(extra_params.items())))
+
         use_preallocate = extra_params.pop('use_preallocate', True)
 
-        # always create new encoder
         if not self.reuse_encoder:
             if self._encoder is not None:
                 self._encoder.close_encoder()
                 self._encoder = None
                 self._encoder_config = None
                 self._collector = None
+        else:
+            can_reuse = (
+                self._encoder is not None and
+                self._encoder_config is not None and
+                self._encoder_config == config
+            )
+            if can_reuse:
+                ret = self._encoder.reset_encoder()
+                if ret == 0:
+                    if self._collector:
+                        self._collector.reset()
+                    print(f"  [Encoder] RESET (fast path, config unchanged)")
+                    return self._encoder, self._collector
+                else:
+                    print(f"  [Encoder] RESET FAILED (ret={ret}), recreating...")
+                    self._encoder.close_encoder()
+                    self._encoder = None
 
-            encoder = X265NativeEncoder(lib_path=self.lib_path)
-            collector = MVCollector(width, height, enable_deltapoc=True) if use_preallocate else None
-            self._collector = collector
-            return encoder, collector
-
-        can_reuse = (
-            self._encoder is not None and
-            self._encoder_config is not None and
-            self._encoder_config == config
-        )
-
-        if can_reuse:
-            ret = self._encoder.reset_encoder()
-            if ret == 0:
-                # Reset successful, reuse collector
-                if self._collector:
-                    self._collector.reset()
-                print(f"  [Encoder] RESET (fast path, config unchanged)")
-                return self._encoder, self._collector
-            else:
-                # Reset failed, fall back to recreation
-                print(f"  [Encoder] RESET FAILED (ret={ret}), recreating...")
+            # If can't reuse, close old and create new
+            if self._encoder is not None:
                 self._encoder.close_encoder()
                 self._encoder = None
-
-        # Slow path: create new encoder
-        if self._encoder is not None:
-            self._encoder.close_encoder()
-            self._encoder = None
 
         if use_preallocate:
             # PIXEL dimensions
@@ -363,8 +353,6 @@ class X265NativeWrapper:
         self.close()
 
     def compute_flow(self, frames, ref_frame_idx_list, **kwargs):
-        import time
-
         # Parse parameters
         size_str = kwargs.get('size', f"{frames[0].shape[1]}x{frames[0].shape[0]}")
         width, height = map(int, size_str.split('x'))
@@ -462,6 +450,87 @@ class X265NativeWrapper:
             self._print_profile_summary(profile_data, stage, width, height)
 
         return [forward_flows, backward_flows], None
+
+    def compute_flow_from_tensors(self, ref_frame_tensor: torch.Tensor, current_frame_tensor: torch.Tensor, **kwargs) -> tuple[torch.Tensor, torch.Tensor]:
+        if ref_frame_tensor.dim() != 4 or current_frame_tensor.dim() != 4:
+            raise ValueError(f"Expected 4D input tensors [B, C, H, W], but got {ref_frame_tensor.dim()}D and {current_frame_tensor.dim()}D")
+        
+        B, C, H, W = ref_frame_tensor.shape
+        input_device = ref_frame_tensor.device
+
+        size_str = kwargs.get('size', f"{W}x{H}")
+        width, height = map(int, size_str.split('x'))
+        fps = kwargs.get('frame_rate', 30)
+        preset = kwargs.get('preset', 'fast')
+        stage = kwargs.get('stage', 'lookahead')
+        enable_profile = kwargs.get('profile', True)
+        if stage not in ['lookahead', 'encode']:
+            raise ValueError(f"Invalid stage: {stage}. Must be 'lookahead' or 'encode'")
+
+        x265_params = {
+            'ctu': kwargs.get('ctu', 16),
+            'crf': kwargs.get('crf', 23),
+        }
+
+        if 'enable_p_intra' in kwargs:
+            x265_params['enable_p_intra'] = kwargs['enable_p_intra']
+
+        # Handle use_preallocate separately (will be popped in _get_or_create_encoder)
+        if 'use_preallocate' in kwargs:
+            x265_params['use_preallocate'] = kwargs['use_preallocate']
+        
+        profile_data = None
+        if enable_profile:
+            profile_data = {'yuv_conversion': [], 'encoder_open': [], 'struct_filling': [], 'x265_encode_call': [], 'encoder_flush': [], 'flow_copy': [], 'tensor_conversion': [], 'total_per_pair': []}
+
+        forward_flows = torch.zeros((B, 2, H, W), device=input_device, dtype=torch.float32)
+        backward_flows = torch.zeros((B, 2, H, W), device=input_device, dtype=torch.float32)
+
+        def tensor_to_rgb_np(tensor_frame: torch.Tensor) -> np.ndarray:
+            # Converts a single [C, H, W] tensor (range -1 to 1) to a [H, W, C] RGB numpy array (range 0-255)
+            img_np = tensor_frame.permute(1, 2, 0).cpu().numpy()
+            img_np = (img_np * 0.5 + 0.5) * 255.0
+            img_np= np.clip(img_np, 0, 255).astype(np.uint8)
+            img_np=cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+            return img_np
+
+        for i in range(B):
+            # cur_time=time.time()
+            ref_np = tensor_to_rgb_np(ref_frame_tensor[i])
+            current_np = tensor_to_rgb_np(current_frame_tensor[i])
+            # print(f"Converted tensors to numpy arrays for frame {i} in {time.time()-cur_time:.4f} seconds.")
+
+            # --- Backward Flow (current -> ref) ---
+            t_bwd_pair_start = time.perf_counter() if enable_profile else None
+            bwd_flow_np = self._encode_frame_pair(
+                ref_np, current_np, width, height, fps, preset, stage,
+                profile_data=profile_data,
+                **x265_params
+            )
+            if enable_profile: profile_data['total_per_pair'].append(time.perf_counter() - t_bwd_pair_start)
+
+            t_bwd_tensor_start = time.perf_counter() if enable_profile else None
+            backward_flows[i] = torch.from_numpy(bwd_flow_np).to(input_device)
+            if enable_profile: profile_data['tensor_conversion'].append(time.perf_counter() - t_bwd_tensor_start)
+            
+            # --- Forward Flow (ref -> current) ---
+            # t_fwd_pair_start = time.perf_counter() if enable_profile else None
+            # fwd_flow_np = self._encode_frame_pair(
+            #     current_np, ref_np, width, height, fps, preset, stage,
+            #     profile_data=profile_data,
+            #     **x265_params
+            # )
+            # if enable_profile: profile_data['total_per_pair'].append(time.perf_counter() - t_fwd_pair_start)
+
+            # t_fwd_tensor_start = time.perf_counter() if enable_profile else None
+            # forward_flows[i] = torch.from_numpy(fwd_flow_np).to(input_device)
+            # if enable_profile: profile_data['tensor_conversion'].append(time.perf_counter() - t_fwd_tensor_start)
+
+        # if enable_profile and profile_data['total_per_pair']:
+        #     self._print_profile_summary(profile_data, stage, W, H)
+        # print("mean",torch.mean(ref_frame_tensor), torch.mean(current_frame_tensor))
+        # print("Final return of x265",torch.mean(forward_flows), torch.mean(backward_flows))
+        return forward_flows, backward_flows
 
     def _print_profile_summary(self, profile_data, stage, width, height):
         print("\n" + "="*70)

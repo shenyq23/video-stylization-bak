@@ -2,3 +2,10 @@
 **/.vscode/**
 **/data/**
 **/x265_log/**
+/motion_compensation/test_visual/
+/motion_compensation/visual/
+/motion_compensation/test_visual_from_pngs/
+/motion_compensation/output/
+/StreamDiffusionV2/ckpts/
+/StreamDiffusionV2/wan_models/
+/StreamDiffusionV2/outputs/

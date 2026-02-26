@@ -29,7 +29,7 @@ class WanTextEncoder(TextEncoderInterface):
             device=torch.device('cpu')
         ).eval().requires_grad_(False)
         self.text_encoder.load_state_dict(
-            torch.load(f"wan_models/Wan2.1-{model_type}/models_t5_umt5-xxl-enc-bf16.pth",
+            torch.load(os.path.join(repo_root,f"wan_models/Wan2.1-{model_type}/models_t5_umt5-xxl-enc-bf16.pth"),
                        map_location='cpu', weights_only=False)
         )
 
@@ -72,7 +72,7 @@ class WanVAEWrapper(VAEInterface):
 
         # init model
         self.model = _video_vae(
-            pretrained_path=f"wan_models/Wan2.1-{model_type}/Wan2.1_VAE.pth",
+            pretrained_path=os.path.join(repo_root,f"wan_models/Wan2.1-{model_type}/Wan2.1_VAE.pth"),
             z_dim=16,
         ).eval().requires_grad_(False)
 
@@ -135,7 +135,7 @@ class WanDiffusionWrapper(DiffusionModelInterface):
     def __init__(self, model_type="T2V-1.3B"):
         super().__init__()
 
-        self.model = WanModel.from_pretrained(f"wan_models/Wan2.1-{model_type}/")
+        self.model = WanModel.from_pretrained(os.path.join(repo_root,f"wan_models/Wan2.1-{model_type}/"))
         self.model.eval()
 
         self.uniform_timestep = True
@@ -324,8 +324,58 @@ class CausalWanDiffusionWrapper(WanDiffusionWrapper):
     def __init__(self, model_type="T2V-1.3B"):
         super().__init__()
 
-        self.model = CausalWanModel.from_pretrained(
-            f"wan_models/Wan2.1-{model_type}/")
+        self.model = CausalWanModel.from_pretrained(os.path.join(repo_root,
+            f"wan_models/Wan2.1-{model_type}/"))
         self.model.eval()
 
         self.uniform_timestep = False
+    
+    # Overwrite the forward method to accept new arguments
+    def forward(
+        self, noisy_image_or_video: torch.Tensor, conditional_dict: dict,
+        timestep: torch.Tensor, kv_cache: Optional[List[dict]] = None,
+        crossattn_cache: Optional[List[dict]] = None,
+        current_start: Optional[int] = None,
+        current_end: Optional[int] = None,
+        # ==================== NEW CODE START ====================
+        flow_guidance_cache = None,
+        latent_flow_data = None
+        # ===================== NEW CODE END =====================
+    ) -> torch.Tensor:
+        prompt_embeds = conditional_dict["prompt_embeds"]
+
+        if self.uniform_timestep:
+            input_timestep = timestep[:, 0]
+        else:
+            input_timestep = timestep
+
+        # The original logic used kv_cache to decide the code path. We keep that.
+        if kv_cache is not None:
+            flow_pred = self.model(
+                noisy_image_or_video.permute(0, 2, 1, 3, 4),
+                t=input_timestep, context=prompt_embeds,
+                seq_len=self.seq_len,
+                kv_cache=kv_cache,
+                crossattn_cache=crossattn_cache,
+                current_start=current_start,
+                current_end=current_end,
+                # ==================== NEW CODE START ====================
+                flow_guidance_cache=flow_guidance_cache,
+                latent_flow_data=latent_flow_data
+                # ===================== NEW CODE END =====================
+            ).permute(0, 2, 1, 3, 4)
+        else:
+            # This path is for training or non-cached inference, no changes needed here.
+            flow_pred = self.model(
+                noisy_image_or_video.permute(0, 2, 1, 3, 4),
+                t=input_timestep, context=prompt_embeds,
+                seq_len=self.seq_len
+            ).permute(0, 2, 1, 3, 4)
+
+        pred_x0 = self._convert_flow_pred_to_x0(
+            flow_pred=flow_pred.flatten(0, 1),
+            xt=noisy_image_or_video.flatten(0, 1),
+            timestep=timestep.flatten(0, 1)
+        ).unflatten(0, flow_pred.shape[:2])
+
+        return pred_x0

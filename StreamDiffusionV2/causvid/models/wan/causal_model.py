@@ -19,6 +19,25 @@ import math
 from flash_attn import flash_attn_interface
 import torch.distributed as dist
 import time
+import numpy as np
+import cv2
+
+from gmflow.geometry import flow_warp as universal_flow_warp
+
+def visualize_latent_to_image(latent: torch.Tensor) -> np.ndarray:
+    """Visualizes a latent tensor by taking the mean across channels and normalizing."""
+    if latent.dim() == 4:
+        latent = latent.squeeze(0)
+
+    latent_mean = latent.mean(dim=0)
+    min_val, max_val = latent_mean.min(), latent_mean.max()
+    if max_val > min_val:
+        latent_norm = (latent_mean - min_val) / (max_val - min_val)
+    else:
+        latent_norm = torch.zeros_like(latent_mean)
+
+    img_np = (latent_norm.float().cpu().numpy() * 255).astype(np.uint8)
+    return cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
 
 # wan 1.3B model has a weird channel / head configurations and require max-autotune to work with flexattention
 # see https://github.com/pytorch/pytorch/issues/133254
@@ -198,7 +217,8 @@ class CausalWanSelfAttention(nn.Module):
         self.norm_q = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
         self.norm_k = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
 
-    def forward(self, x, seq_lens, grid_sizes, freqs, block_mask, kv_cache=None, current_start=0, current_end=0):
+    def forward(self, x, seq_lens, grid_sizes, freqs, block_mask, kv_cache=None, current_start=0, current_end=0
+                ,flow_guidance_cache = None, latent_flow_data = None):
         r"""
         Args:
             x(Tensor): Shape [B, L, num_heads, C / num_heads]
@@ -220,7 +240,17 @@ class CausalWanSelfAttention(nn.Module):
             return q, k, v
 
         q, k, v = qkv_fn(x)
+
+        use_flow_guidance = (
+            latent_flow_data is not None and
+            flow_guidance_cache is not None
+        )
+        # print(latent_flow_data==None,flow_guidance_cache==None,use_flow_guidance)
+        # if (use_flow_guidance):
+        #     print(x.shape,flow_guidance_cache.shape, latent_flow_data['flow'].shape,latent_flow_data['mask'].shape)
+        #     for i in range (flow_guidance_cache.shape[0]): print(i,torch.mean(flow_guidance_cache[i]),torch.mean(latent_flow_data['flow'][i]),torch.mean(latent_flow_data['mask'][i].float()))
         
+        use_flow_guidance=False
         # #torch.cuda.synchronize(x.device)
         # end_prepare_qkv_time=time.time()
         # print("###time for prepare qkv:",end_prepare_qkv_time-start_basic_attn_time)
@@ -255,146 +285,92 @@ class CausalWanSelfAttention(nn.Module):
                 value=padded_v.transpose(2, 1),
                 block_mask=block_mask
             )[:, :, :-padded_length].transpose(2, 1)
+
         else:
-            # ==================== 修改后的逻辑: 混合式 Sink + 滚动 KV Cache ====================
             frame_seqlen = math.prod(grid_sizes[0][1:]).item()
             num_new_tokens = q.shape[1]
             kv_cache_size = kv_cache["k"].shape[1]
-            
-            # sink_tokens 是指在物理缓存中需要保留的token数量
             sink_tokens = self.sink_size * frame_seqlen
-
             current_start_frame = current_start // frame_seqlen
-            roped_query = causal_rope_apply(q, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
 
-            # #torch.cuda.synchronize(x.device)
-            # end_prepare_ropeq_time=time.time()
-            # print("###time for prepare rope query:",end_prepare_ropeq_time-end_prepare_qkv_time)
+            roped_query = causal_rope_apply(q, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
             roped_key = causal_rope_apply(k, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
 
-            # #torch.cuda.synchronize(x.device)
-            # end_prepare_ropeqkv_time=time.time()
-            # print("###time for prepare rope qkv:",end_prepare_ropeqkv_time-end_prepare_qkv_time)
-
-            
-
+            # This is the same rolling cache logic as before
             is_append_phase = (current_start + num_new_tokens) <= kv_cache_size
             is_rolling_phase = ~is_append_phase
-
-            # 2. 无条件处理“滚动”组。如果 is_rolling_phase 全为 False，
-            #    PyTorch 会将此操作视为空操作，开销极小。
             src_start = sink_tokens + num_new_tokens
             dest_start = sink_tokens
             dest_end = kv_cache_size - num_new_tokens
             write_start = kv_cache_size - num_new_tokens
-
             kv_cache["k"][is_rolling_phase, dest_start:dest_end] = kv_cache["k"][is_rolling_phase, src_start:].clone()
             kv_cache["v"][is_rolling_phase, dest_start:dest_end] = kv_cache["v"][is_rolling_phase, src_start:].clone()
             kv_cache["k"][is_rolling_phase, write_start:] = roped_key[is_rolling_phase]
             kv_cache["v"][is_rolling_phase, write_start:] = v[is_rolling_phase]
-
-            # 3. 无条件处理“追加”组。如果 is_append_phase 全为 False,
-            #    append_indices 将为空张量，后续所有操作也均为空操作。
             append_indices = torch.where(is_append_phase)[0]
-            
-            # 只有当 append_indices 不为空时才进行计算，
-            # 这里的 if 判断是在张量上，避免了空张量的索引问题
             if append_indices.numel() > 0:
                 append_starts = current_start[append_indices]
                 append_offsets = torch.arange(num_new_tokens, device=x.device)
                 append_cols = append_starts.unsqueeze(1) + append_offsets.unsqueeze(0)
                 append_rows = append_indices.unsqueeze(1).expand(-1, num_new_tokens)
-
                 kv_cache["k"][append_rows, append_cols] = roped_key[append_indices]
                 kv_cache["v"][append_rows, append_cols] = v[append_indices]
 
-
-
-
-            # for i in range(b):
-            #     #torch.cuda.synchronize(x.device)
-            #     start_for_loop_time=time.time()
-            #     c_start = current_start[i].item()
-
-            #     # 判断添加新token后是否会超出缓存容量
-            #     # 使用 `<=` 是为了精确处理缓存刚好被填满的临界情况
-            #     if c_start + num_new_tokens <= kv_cache_size:
-            #         # 阶段一: 缓存还未填满，直接在末尾顺序追加
-            #         physical_start = c_start
-            #         kv_cache["k"][i, physical_start : physical_start + num_new_tokens] = roped_key[i]
-            #         kv_cache["v"][i, physical_start : physical_start + num_new_tokens] = v[i]
-
-            #         #torch.cuda.synchronize(x.device)
-            #         end_directadd_time=time.time()
-            #         print("###time for direct add kv cache:",end_directadd_time-start_for_loop_time)
-            #     else:
-            #         # 阶段二: 缓存已满或将满，执行滚动操作，保护 Sink Tokens
-                    
-            #         # 1. 回滚/移动: 将 sink token 之后的数据向前移动 num_new_tokens 位
-            #         # 源数据区域的起始位置 (跳过 sink 和即将被丢弃的旧 token)
-            #         src_start = sink_tokens + num_new_tokens
-            #         # 目标数据区域的起始位置 (紧跟在 sink token 之后)
-            #         dest_start = sink_tokens
-            #         # 目标数据区域的结束位置
-            #         dest_end = kv_cache_size - num_new_tokens
-
-            #         # 使用 .clone() 来安全地处理重叠内存的复制
-            #         kv_cache["k"][i, dest_start:dest_end] = kv_cache["k"][i, src_start:].clone()
-            #         kv_cache["v"][i, dest_start:dest_end] = kv_cache["v"][i, src_start:].clone()
-
-            #         # 2. 写入新数据: 在回滚后腾出的缓存末尾空间写入新的 token
-            #         write_start = kv_cache_size - num_new_tokens
-            #         kv_cache["k"][i, write_start:] = roped_key[i]
-            #         kv_cache["v"][i, write_start:] = v[i]
-
-            #         #torch.cuda.synchronize(x.device)
-            #         end_rolling_time=time.time()
-            #         print("###time for rolling kv cache:",end_rolling_time-start_for_loop_time)
-
-            # 有效序列长度是已处理的token总数，但不能超过物理缓存的大小
-            # 这个计算逻辑对于顺序填充和滚动填充两种情况都适用
             effective_seqlens = torch.minimum(
                 current_start + num_new_tokens,
                 torch.tensor(kv_cache_size, device=current_start.device, dtype=torch.long)
             ).to(torch.int32)
 
-            # flash_attn_with_kvcache 根据 cache_seqlens 知道应该关注缓存中的多少内容
-            # 假设 flash_attn_interface 存在
-            # torch.cuda.synchronize(x.device)
-            end_kvcache_time=time.time()
-            # print("###time for kv cache update:",end_kvcache_time-start_basic_attn_time)
+            if use_flow_guidance:
+                flow = latent_flow_data["flow"]
+                occ_mask = latent_flow_data["mask"] # This is a boolean mask [B, 1, H, W]
+                
+                # Reshape previous output x_prev to be image-like for warping
+                # x_prev has shape [B, S, C] where S = H*W and C = n*d
+                x_prev = flow_guidance_cache
+                _, _, latent_h, latent_w = occ_mask.shape
+                x_prev_image = x_prev.view(b, latent_h, latent_w, n * d).permute(0, 3, 1, 2)
 
-            # tmp_x=x.clone()
-            # selection_ratio = 0.1
-            # num_tokens_to_select = int(roped_query.shape[1] * selection_ratio)
-            # num_tokens_to_select = max(1, num_tokens_to_select) # 确保至少选择一个 token
-            # b, s, n, d = roped_query.shape
-            # _, random_indices = torch.topk(torch.rand(b, s, device=x.device), k=num_tokens_to_select, dim=1)
-            # # 索引形状: [b, num_tokens_to_select] -> [b, num_tokens_to_select, n, d]
-            # expanded_indices = random_indices.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, n, d)
-            # sparse_roped_query = torch.gather(roped_query, 1, expanded_indices)
-            # x = flash_attn_interface.flash_attn_with_kvcache(
-            #     q=sparse_roped_query, # 使用稀疏的 query
-            #     k_cache=kv_cache["k"],
-            #     v_cache=kv_cache["v"],
-            #     cache_seqlens=effective_seqlens,
-            # )
-            # x=tmp_x.clone()
+                x_warped_image = universal_flow_warp(x_prev_image.float(), flow.float()).to(dtype=x.dtype)
+                x_warped = x_warped_image.permute(0, 2, 3, 1).view(b, s, n * d)
+                x = x_warped.view(b, s, n, d) # Default output is the warped result
+                occ_mask_flat = occ_mask.view(b, s) # Shape: [4, 1560]
 
-            x = flash_attn_interface.flash_attn_with_kvcache(
-                q=roped_query,
-                k_cache=kv_cache["k"],
-                v_cache=kv_cache["v"],
-                cache_seqlens=effective_seqlens,
-            )
+                num_sparse_tokens = int(torch.sum(occ_mask_flat[0]).item())
 
-            # torch.cuda.synchronize(x.device)
-            end_flashattn_time=time.time()
-            # print("time for gather:",end_gather_time-end_kvcache_time,"time for flash attn",end_flashattn_time-end_gather_time)
-            # print("###time for flash attn with kv cache:",end_flashattn_time-end_kvcache_time)
+                if num_sparse_tokens > 0:
+                    # a. Get sparse indices for each batch item using topk. Shape: [B, num_sparse_tokens]
+                    _, sparse_indices = torch.topk(occ_mask_flat.byte(), k=num_sparse_tokens, dim=1)
+
+                    # b. Gather sparse queries using the batched indices.
+                    # Expand indices from [B, K] to [B, K, N, D] for gather.
+                    expanded_indices = sparse_indices.view(b, num_sparse_tokens, 1, 1).expand(-1, -1, n, d)
+                    q_sparse = roped_query.gather(1, expanded_indices)
+
+                    x_sparse_output = flash_attn_interface.flash_attn_with_kvcache(
+                        q=q_sparse,
+                        k_cache=kv_cache["k"],
+                        v_cache=kv_cache["v"],
+                        cache_seqlens=effective_seqlens,
+                    )
+                    sparse_results_full = torch.zeros_like(x)
+                    sparse_results_full.scatter_(1, expanded_indices, x_sparse_output)
+                    occ_mask_expanded = occ_mask_flat.view(b, s, 1, 1).expand_as(x)
+                    x = torch.where(occ_mask_expanded, sparse_results_full, x)
+
+            else:
+                x = flash_attn_interface.flash_attn_with_kvcache(
+                    q=roped_query,
+                    k_cache=kv_cache["k"],
+                    v_cache=kv_cache["v"],
+                    cache_seqlens=effective_seqlens,
+                )
 
         x = x.flatten(2)
+        if flow_guidance_cache is not None:
+            flow_guidance_cache.copy_(x.detach())
         x = self.o(x)
+        
         #torch.cuda.synchronize(x.device)
         end_basic_attn_time=time.time()
         # print("###time for self attn self.o:",end_basic_attn_time-end_flashattn_time)
@@ -454,7 +430,9 @@ class CausalWanAttentionBlock(nn.Module):
         kv_cache=None,
         crossattn_cache=None,
         current_start=0,
-        current_end=0
+        current_end=0,
+        flow_guidance_cache = None,
+        latent_flow_data = None
     ):
         r"""
         Args:
@@ -477,7 +455,9 @@ class CausalWanAttentionBlock(nn.Module):
             (self.norm1(x).unflatten(dim=1, sizes=(num_frames, frame_seqlen))
              * (1 + e[1]) + e[0]).flatten(1, 2),
             seq_lens, grid_sizes,
-            freqs, block_mask, kv_cache, current_start, current_end)
+            freqs, block_mask, kv_cache, current_start, current_end,
+            flow_guidance_cache=flow_guidance_cache,
+            latent_flow_data=latent_flow_data)
 
         # with amp.autocast(dtype=torch.float32):
         x = x + (y.unflatten(dim=1, sizes=(num_frames, frame_seqlen))
@@ -668,6 +648,8 @@ class CausalWanModel(ModelMixin, ConfigMixin):
 
         self.num_frame_per_block = 1
 
+        self.count=0
+
     def _set_gradient_checkpointing(self, module, value=False):
         self.gradient_checkpointing = value
 
@@ -731,6 +713,8 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         block_mode: str = 'input',
         block_num: int = [-1],
         patched_x_shape: torch.Tensor = None,
+        flow_guidance_cache = None,
+        latent_flow_data = None
     ):
         r"""
         Run the diffusion model with kv caching.
@@ -835,6 +819,17 @@ class CausalWanModel(ModelMixin, ConfigMixin):
             def custom_forward(*inputs, **kwargs):
                 return module(*inputs, **kwargs)
             return custom_forward
+
+        # print(x.shape,grid_sizes,grid_sizes.shape)
+        # x=x[:,156,:]
+
+        # if(grid_sizes[0][0]==1):
+        #     for index in range (x.shape[0]):
+        #         cur_x=x[index]
+        #         cur_size=grid_sizes[index]
+        #         cur_x=cur_x.transpose(0,1).view(x.shape[2],cur_size[1],cur_size[2])
+        #         visual_x=visualize_latent_to_image(cur_x)
+        #         cv2.imwrite(f"./outputs/dit/{self.count}_{index}_pre.png",visual_x)
         
         for block_index, block in enumerate(self.blocks):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
@@ -849,7 +844,9 @@ class CausalWanModel(ModelMixin, ConfigMixin):
                         "kv_cache": kv_cache[block_index],
                         "crossattn_cache": crossattn_cache[block_index],
                         "current_start": current_start,
-                        "current_end": current_end
+                        "current_end": current_end,
+                        "flow_guidance_cache": None if flow_guidance_cache==None or block_index>=5 else flow_guidance_cache[block_index],
+                        "latent_flow_data": latent_flow_data,
                     }
                 )
                 x = block(x, **kwargs)
@@ -857,6 +854,18 @@ class CausalWanModel(ModelMixin, ConfigMixin):
                 block_end_time=time.time()
                 # print(f"###time for block {block_index} :",block_end_time-start_block_time)
                 start_block_time=block_end_time
+
+        # if(grid_sizes[0][0]==1):
+        #     for index in range (x.shape[0]):
+        #         cur_x=x[index]
+        #         cur_size=grid_sizes[index]
+        #         cur_x=cur_x.transpose(0,1).view(x.shape[2],cur_size[1],cur_size[2])
+        #         visual_x=visualize_latent_to_image(cur_x)
+        #         cv2.imwrite(f"./outputs/dit/{self.count}_{index}_after.png",visual_x)
+
+        # self.count+=1
+
+
         if block_mode == 'input' and block_num[-1] == len(self.blocks):
             return x, patched_x_shape
 
