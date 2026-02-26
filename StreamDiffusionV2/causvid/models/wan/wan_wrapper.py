@@ -110,7 +110,7 @@ class WanVAEWrapper(VAEInterface):
         # to [batch_size, num_frames, num_channels, height, width]
         # output = output.permute(0, 2, 1, 3, 4)
         return output
-    
+
     def stream_encode(self, video: torch.Tensor, is_scale=True) -> torch.Tensor:
         if is_scale:
             device, dtype = video.device, video.dtype
@@ -119,7 +119,7 @@ class WanVAEWrapper(VAEInterface):
         else:
             scale = None
         return self.model.stream_encode(video, scale)
-    
+
     def stream_decode_to_pixel(self, latent: torch.Tensor) -> torch.Tensor:
         zs = latent.permute(0, 2, 1, 3, 4)
         zs = zs.to(torch.bfloat16).to(latent.device)
@@ -258,7 +258,7 @@ class WanDiffusionWrapper(DiffusionModelInterface):
             input_timestep = timestep[:, 0]
         else:
             input_timestep = timestep
-        
+
         if block_x is not None and block_mode == 'middle':
             noisy_image_or_video = block_x
         else:
@@ -329,7 +329,7 @@ class CausalWanDiffusionWrapper(WanDiffusionWrapper):
         self.model.eval()
 
         self.uniform_timestep = False
-    
+
     # Overwrite the forward method to accept new arguments
     def forward(
         self, noisy_image_or_video: torch.Tensor, conditional_dict: dict,

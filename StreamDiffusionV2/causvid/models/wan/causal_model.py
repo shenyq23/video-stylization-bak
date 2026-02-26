@@ -78,7 +78,7 @@ def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
     # start_frame.view(B, 1) -> [[20], [19], [18], [17]]
     # t_indices -> [[20], [19], [18], [17]] (因为 f=1)
     t_indices = torch.arange(f, device=x.device).view(1, f) + start_frame.view(B, 1)
-    
+
     # 使用高级索引一次性取出所有样本所需的时间频率
     # freqs_t[t_indices] -> shape: (B, f, dim_t)
     causal_freqs_t = freqs_t[t_indices]
@@ -104,7 +104,7 @@ def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
         static_freqs_h.expand(B, f, h, w, -1),
         static_freqs_w.expand(B, f, h, w, -1)
     ], dim=-1)
-    
+
     # d. 变形以匹配输入x的形状
     # (B, f, h, w, c) -> (B, S, c) -> (B, S, 1, c)
     freqs_vectorized = freqs_full.reshape(B, S, c).unsqueeze(2)
@@ -205,7 +205,7 @@ class CausalWanSelfAttention(nn.Module):
         self.window_size = window_size
         self.qk_norm = qk_norm
         self.eps = eps
-        
+
         self.sink_size = 3
         self.adapt_sink_thr = -1
 
@@ -249,7 +249,7 @@ class CausalWanSelfAttention(nn.Module):
         # if (use_flow_guidance):
         #     print(x.shape,flow_guidance_cache.shape, latent_flow_data['flow'].shape,latent_flow_data['mask'].shape)
         #     for i in range (flow_guidance_cache.shape[0]): print(i,torch.mean(flow_guidance_cache[i]),torch.mean(latent_flow_data['flow'][i]),torch.mean(latent_flow_data['mask'][i].float()))
-        
+
         use_flow_guidance=False
         # #torch.cuda.synchronize(x.device)
         # end_prepare_qkv_time=time.time()
@@ -324,7 +324,7 @@ class CausalWanSelfAttention(nn.Module):
             if use_flow_guidance:
                 flow = latent_flow_data["flow"]
                 occ_mask = latent_flow_data["mask"] # This is a boolean mask [B, 1, H, W]
-                
+
                 # Reshape previous output x_prev to be image-like for warping
                 # x_prev has shape [B, S, C] where S = H*W and C = n*d
                 x_prev = flow_guidance_cache
@@ -370,7 +370,7 @@ class CausalWanSelfAttention(nn.Module):
         if flow_guidance_cache is not None:
             flow_guidance_cache.copy_(x.detach())
         x = self.o(x)
-        
+
         #torch.cuda.synchronize(x.device)
         end_basic_attn_time=time.time()
         # print("###time for self attn self.o:",end_basic_attn_time-end_flashattn_time)
@@ -762,7 +762,7 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         else:
             bsz, cch, tlen, hh, ww = [int(i) for i in patched_x_shape.tolist()]
             x = [u.permute(1,0).reshape(bsz, cch, tlen, hh, ww) for u in x]
-            
+
         grid_sizes = torch.stack(
             [torch.tensor(u.shape[2:], dtype=torch.long) for u in x])
         x = [u.flatten(2).transpose(1, 2) for u in x]
@@ -830,7 +830,7 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         #         cur_x=cur_x.transpose(0,1).view(x.shape[2],cur_size[1],cur_size[2])
         #         visual_x=visualize_latent_to_image(cur_x)
         #         cv2.imwrite(f"./outputs/dit/{self.count}_{index}_pre.png",visual_x)
-        
+
         for block_index, block in enumerate(self.blocks):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
                 assert False
