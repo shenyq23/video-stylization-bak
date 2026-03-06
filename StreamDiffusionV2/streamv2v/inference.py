@@ -975,7 +975,7 @@ def main():
     )
     parser.add_argument("--max_frames", type=int, default=None, help="Video length (number of frames)")
     parser.add_argument("--flow_model", type=str, default="x265", choices=["gmflow", "raft", "x265", "none"], help="Optical flow model to use (from calflow). If None, flow is not calculated.")
-    parser.add_argument("--x265_params", type=str, default='{"stage":"lookahead", "quiet":true}', help="x265 parameters as a JSON string. e.g., '{\"stage\": \"lookahead\"}'")
+    parser.add_argument("--x265_params", type=str, default='{"stage":"lookahead", "log-level":"none"}', help="x265 parameters as a JSON string. e.g., '{\"stage\": \"lookahead\"}'")
     parser.add_argument("--occlusion_method", type=str, default="quantile", choices=["quantile", "morphological", "connected_components", "gather_block"], help="Method to generate occlusion mask.")
     parser.add_argument("--top_k_percentage", type=float, default=0.1, help="Top percentage of occlusion values to consider as masked.")
     parser.add_argument("--use_cached_text_embedding", action="store_true", help="If set, load pre-computed text embeddings from 'cached_text_embedding.pt' instead of initializing the text encoder.")

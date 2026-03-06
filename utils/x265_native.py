@@ -331,6 +331,8 @@ class X265NativeWrapper:
         for key in ['ctu', 'crf']:
             if key in extra_params:
                 x265_params[key] = extra_params[key]
+        if 'log-level' in extra_params:
+            x265_params['log-level'] = extra_params['log-level']
 
         self._encoder.open_encoder(
             width, height, fps,
@@ -374,6 +376,8 @@ class X265NativeWrapper:
         # Handle use_preallocate separately (will be popped in _get_or_create_encoder)
         if 'use_preallocate' in kwargs:
             x265_params['use_preallocate'] = kwargs['use_preallocate']
+        if 'log-level' in kwargs:
+            x265_params['log-level'] = kwargs['log-level']
 
         num_frames = len(frames)
 
@@ -454,7 +458,6 @@ class X265NativeWrapper:
     def compute_flow_from_tensors(self, ref_frame_tensor: torch.Tensor, current_frame_tensor: torch.Tensor, **kwargs) -> tuple[torch.Tensor, torch.Tensor]:
         if ref_frame_tensor.dim() != 4 or current_frame_tensor.dim() != 4:
             raise ValueError(f"Expected 4D input tensors [B, C, H, W], but got {ref_frame_tensor.dim()}D and {current_frame_tensor.dim()}D")
-        
         B, C, H, W = ref_frame_tensor.shape
         input_device = ref_frame_tensor.device
 
@@ -478,7 +481,9 @@ class X265NativeWrapper:
         # Handle use_preallocate separately (will be popped in _get_or_create_encoder)
         if 'use_preallocate' in kwargs:
             x265_params['use_preallocate'] = kwargs['use_preallocate']
-        
+        if 'log-level' in kwargs:
+            x265_params['log-level'] = kwargs['log-level']
+
         profile_data = None
         if enable_profile:
             profile_data = {'yuv_conversion': [], 'encoder_open': [], 'struct_filling': [], 'x265_encode_call': [], 'encoder_flush': [], 'flow_copy': [], 'tensor_conversion': [], 'total_per_pair': []}
@@ -512,7 +517,6 @@ class X265NativeWrapper:
             t_bwd_tensor_start = time.perf_counter() if enable_profile else None
             backward_flows[i] = torch.from_numpy(bwd_flow_np).to(input_device)
             if enable_profile: profile_data['tensor_conversion'].append(time.perf_counter() - t_bwd_tensor_start)
-            
             # --- Forward Flow (ref -> current) ---
             # t_fwd_pair_start = time.perf_counter() if enable_profile else None
             # fwd_flow_np = self._encode_frame_pair(
