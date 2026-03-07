@@ -1,0 +1,162 @@
+[
+  {
+    "src_video_name": "bird",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "bird_0",
+    "prompt": "A beautiful parrot is looking around, realistic."
+  },
+  {
+    "src_video_name": "bird",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "bird_1",
+    "prompt": "A cyberpunk bird with metallic plumage, glowing neon circuitry, and iridescent reflections; hints of holographic texture and faint energy pulses beneath the surface; illuminated by atmospheric neon light in blue, purple, and pink tones with a sleek futuristic aesthetic."
+  },
+  {
+    "src_video_name": "boxing",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "boxing_0",
+    "prompt": "An anime protagonist with bandaged hands and determined eyes throws rapid punches at a holographic target, energy auras bursting from every move. Dust swirls around his feet, his red scarf whips dramatically in the air, and dynamic speed lines amplify his power - classic shonen energy."
+  },
+  {
+    "src_video_name": "boxing",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "boxing_1",
+    "prompt": "A futuristic boxer trains in a VR combat simulation, wearing a glowing full-body suit and visor. His punches shatter holographic enemies made of pixels and data streams, while the digital environment shifts between glitching neon arenas and simulated landscapes."
+  },
+  {
+    "src_video_name": "cat",
+    "height": 1088,
+    "width": 2256,
+    "fps": 30,
+    "output_video_name": "cat_0",
+    "prompt": "A realistic tiger walking gracefully across soft, billowing clouds. The clouds ripple and shift beneath its paws, glowing faintly with sunlight, creating a dreamy, surreal atmosphere."
+  },
+  {
+    "src_video_name": "cat",
+    "height": 1088,
+    "width": 2256,
+    "fps": 30,
+    "output_video_name": "cat_1",
+    "prompt": "A graffiti-style leopard walking realistically across a lush rainforest floor, stepping carefully over leaves and roots."
+  },
+  {
+    "src_video_name": "dance",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "dance_0",
+    "prompt": "Horned dancer with vines woven through curly hair, bioluminescent patterns on skin, moonlight filtering through ancient trees."
+  },
+  {
+    "src_video_name": "dance",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "dance_1",
+    "prompt": "Vintage robot dancer built of brass and glass gears, flickering candlelight reflections, soft mechanical grace."
+  },
+  {
+    "src_video_name": "kungfu",
+    "height": 1088,
+    "width": 1920,
+    "fps": 30,
+    "output_video_name": "kungfu_0",
+    "prompt": "A panda performing kung fu on a moss-covered stone courtyard deep in a bamboo forest, morning fog drifting between tall green stalks, sunlight breaking through in golden shafts."
+  },
+  {
+    "src_video_name": "kungfu",
+    "height": 1088,
+    "width": 1920,
+    "fps": 30,
+    "output_video_name": "kungfu_1",
+    "prompt": "A barefoot child practicing on a mountain ledge at sunrise, vast clouds below and distant peaks glowing orange."
+  },
+  {
+    "src_video_name": "running",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "running_0",
+    "prompt": "Studio Ghibli-style warrior sprinting across a sand beach scattered with floating lanterns and glowing forest spirits in the mist."
+  },
+  {
+    "src_video_name": "running",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "running_1",
+    "prompt": "Luffy from One Piece dashing along a candy-colored beach, stretching arms bouncing with each stride, giant seashells scattered on the sand."
+  },
+  {
+    "src_video_name": "singing",
+    "height": 1088,
+    "width": 2064,
+    "fps": 25,
+    "output_video_name": "singing_0",
+    "prompt": "Elsa from Frozen with flowing hair, singing as magical ice patterns form in the air, snowflakes spiraling into intricate shapes."
+  },
+  {
+    "src_video_name": "singing",
+    "height": 1088,
+    "width": 2064,
+    "fps": 25,
+    "output_video_name": "singing_1",
+    "prompt": "A fairy performing midair in a forest, wings fluttering, voice leaving streaks of glittering dust."
+  },
+  {
+    "src_video_name": "speech",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "speech_0",
+    "prompt": "An elderly man with deep wrinkles, thinning white hair, and wise eyes speaking, soft sunlight falling across his face, subtle age spots visible."
+  },
+  {
+    "src_video_name": "speech",
+    "height": 1088,
+    "width": 1920,
+    "fps": 25,
+    "output_video_name": "speech_1",
+    "prompt": "A humanoid owl with wise golden eyes, speaking with feathers gently ruffling, wearing a leather vest and scholarly robes, perched on a wooden podium in a mystical library. Ancient tomes line towering shelves, glowing runes drift in the air, and candlelight flickers across carved wood. Warm sunlight streams through stained-glass windows, dust motes floating, while subtle magical sparks swirl around him with each word."
+  },
+  {
+    "src_video_name": "surfing",
+    "height": 1088,
+    "width": 2064,
+    "fps": 30,
+    "output_video_name": "surfing_0",
+    "prompt": "A man surfing on a giant stylized wave in the style of Hokusai's The Great Wave off Kanagawa, waves curling dramatically with foamy tips, deep blue and indigo shades blending with white highlights. The surfer balances on a simple wooden board, small and dynamic against the towering wave. Fine lines and textures emulate Japanese woodblock print techniques, with subtle ink outlines and gradient washes. Sea spray and droplets captured in elegant arcs, giving a sense of motion and energy, while distant mountains barely visible through misty water at the horizon."
+  },
+  {
+    "src_video_name": "surfing",
+    "height": 1088,
+    "width": 2064,
+    "fps": 30,
+    "output_video_name": "surfing_1",
+    "prompt": "Superman surfing the waves on a giant leaf, his cape fluttering dramatically in the wind, muscles tensed and body balanced perfectly. Water sprays around him in sparkling arcs, catching the sunlight and creating glimmering droplets in the air."
+  },
+  {
+    "src_video_name": "train",
+    "height": 1552,
+    "width": 1088,
+    "fps": 30,
+    "output_video_name": "train_0",
+    "prompt": "A cyberpunk figure with glowing neon tattoos and a black leather coat clings to the side of a bullet train speeding through a futuristic city, neon signs reflecting across rain-soaked glass, sparks flying as the train roars past skyscrapers."
+  },
+  {
+    "src_video_name": "train",
+    "height": 1552,
+    "width": 1088,
+    "fps": 30,
+    "output_video_name": "train_1",
+    "prompt": "A mysterious mage with flowing starry robes clings to the side of an enchanted crystal train soaring through the night sky, surrounded by glowing runes, floating stardust, and trails of magical energy."
+  }
+]
