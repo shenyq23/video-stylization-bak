@@ -135,60 +135,6 @@ def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
 
     return output
 
-# def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
-#     #torch.cuda.synchronize(x.device)
-#     start_rope_time=time.time()
-#     n, c = x.size(2), x.size(3) // 2
-
-#     # split freqs
-#     freqs = freqs.split([c - 2 * (c // 3), c // 3, c // 3], dim=1)
-
-#     # loop over samples
-#     output = []
-#     # print("grid size",grid_sizes,"x size",x.size())
-#     grid_sizes_list=grid_sizes.tolist()
-
-#     for i, (f, h, w) in enumerate(grid_sizes_list):
-#         seq_len = f * h * w
-
-#         # print("causal_rope_apply frame:",i," start_frame:",start_frame," seq_len:",seq_len," f,h,w:",f,h,w)
-
-#         # #torch.cuda.synchronize(x.device)
-#         # start_grid_time=time.time()
-
-#         sf = start_frame[i].item() if isinstance(start_frame, torch.Tensor) else start_frame
-
-#         # precompute multipliers
-#         x_i = torch.view_as_complex(x[i, :seq_len].to(torch.float64).reshape(
-#             seq_len, n, -1, 2))
-#         freqs_i = torch.cat([
-#             freqs[0][sf:sf + f].view(f, 1, 1, -1).expand(f, h, w, -1),
-#             freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
-#             freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1)
-#         ],
-#             dim=-1).reshape(seq_len, 1, -1)
-
-#         # #torch.cuda.synchronize(x.device)
-#         # end_precompute_time=time.time()
-#         # print("###time for precompute rope freqs:",end_precompute_time-start_grid_time)
-#         # apply rotary embedding
-#         x_i = torch.view_as_real(x_i * freqs_i).flatten(2)
-#         x_i = torch.cat([x_i, x[i, seq_len:]])
-
-#         # append to collection
-#         output.append(x_i)
-
-#         # #torch.cuda.synchronize(x.device)
-#         # end_rope_time=time.time()
-#         # print("###time for apply rope:",end_rope_time-start_grid_time)
-#     output=torch.stack(output).type_as(x)
-
-#     #torch.cuda.synchronize(x.device)
-#     end_torchstack_time=time.time()
-#     print("###time for torch.stack:",end_torchstack_time-start_rope_time)
-#     return output
-
-
 class CausalWanSelfAttention(nn.Module):
 
     def __init__(self,
@@ -218,7 +164,7 @@ class CausalWanSelfAttention(nn.Module):
         self.norm_k = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
 
     def forward(self, x, seq_lens, grid_sizes, freqs, block_mask, kv_cache=None, current_start=0, current_end=0
-                ,flow_guidance_cache = None, latent_flow_data = None):
+                ,flow_guidance_cache = None, latent_flow_data = None, times_for_rolling = 0):
         r"""
         Args:
             x(Tensor): Shape [B, L, num_heads, C / num_heads]
@@ -229,7 +175,7 @@ class CausalWanSelfAttention(nn.Module):
         """
         # print("entering basic self attn:")
         #torch.cuda.synchronize(x.device)
-        start_basic_attn_time=time.time()
+        start_basic_attn_time = time.time()
         b, s, n, d = *x.shape[:2], self.num_heads, self.head_dim
 
         # query, key, value function
@@ -250,7 +196,7 @@ class CausalWanSelfAttention(nn.Module):
         #     print(x.shape,flow_guidance_cache.shape, latent_flow_data['flow'].shape,latent_flow_data['mask'].shape)
         #     for i in range (flow_guidance_cache.shape[0]): print(i,torch.mean(flow_guidance_cache[i]),torch.mean(latent_flow_data['flow'][i]),torch.mean(latent_flow_data['mask'][i].float()))
 
-        use_flow_guidance=False
+        use_flow_guidance = False
         # #torch.cuda.synchronize(x.device)
         # end_prepare_qkv_time=time.time()
         # print("###time for prepare qkv:",end_prepare_qkv_time-start_basic_attn_time)
@@ -303,8 +249,21 @@ class CausalWanSelfAttention(nn.Module):
             dest_start = sink_tokens
             dest_end = kv_cache_size - num_new_tokens
             write_start = kv_cache_size - num_new_tokens
+
+            roll_start_event = torch.cuda.Event(enable_timing=True)
+            roll_end_event = torch.cuda.Event(enable_timing=True)
+            roll_start_event.record()
+
             kv_cache["k"][is_rolling_phase, dest_start:dest_end] = kv_cache["k"][is_rolling_phase, src_start:].clone()
             kv_cache["v"][is_rolling_phase, dest_start:dest_end] = kv_cache["v"][is_rolling_phase, src_start:].clone()
+
+            roll_end_event.record()
+            roll_end_event.synchronize()
+            roll_time = roll_start_event.elapsed_time(roll_end_event)
+            # cnt_true_rolling = is_rolling_phase.sum().item()
+            # print(f"rolling cache: {cnt_true_rolling}, time: {roll_time} ms")
+            times_for_rolling += roll_time
+
             kv_cache["k"][is_rolling_phase, write_start:] = roped_key[is_rolling_phase]
             kv_cache["v"][is_rolling_phase, write_start:] = v[is_rolling_phase]
             append_indices = torch.where(is_append_phase)[0]
@@ -372,13 +331,12 @@ class CausalWanSelfAttention(nn.Module):
         x = self.o(x)
 
         #torch.cuda.synchronize(x.device)
-        end_basic_attn_time=time.time()
+        end_basic_attn_time = time.time()
         # print("###time for self attn self.o:",end_basic_attn_time-end_flashattn_time)
-        return x
+        return x, times_for_rolling
 
 
 class CausalWanAttentionBlock(nn.Module):
-
     def __init__(self,
                  cross_attn_type,
                  dim,
@@ -432,7 +390,8 @@ class CausalWanAttentionBlock(nn.Module):
         current_start=0,
         current_end=0,
         flow_guidance_cache = None,
-        latent_flow_data = None
+        latent_flow_data = None,
+        times_for_rolling = 0,
     ):
         r"""
         Args:
@@ -451,13 +410,13 @@ class CausalWanAttentionBlock(nn.Module):
         # assert e[0].dtype == torch.float32
 
         # self-attention
-        y = self.self_attn(
+        y, times_for_rolling = self.self_attn(
             (self.norm1(x).unflatten(dim=1, sizes=(num_frames, frame_seqlen))
              * (1 + e[1]) + e[0]).flatten(1, 2),
             seq_lens, grid_sizes,
             freqs, block_mask, kv_cache, current_start, current_end,
             flow_guidance_cache=flow_guidance_cache,
-            latent_flow_data=latent_flow_data)
+            latent_flow_data=latent_flow_data, times_for_rolling=times_for_rolling)
 
         # with amp.autocast(dtype=torch.float32):
         x = x + (y.unflatten(dim=1, sizes=(num_frames, frame_seqlen))
@@ -483,7 +442,7 @@ class CausalWanAttentionBlock(nn.Module):
         #torch.cuda.synchronize(x.device)
         end_crossattn_ffn_block_time=time.time()
         # print("###time for cross-attn + ffn block:",end_crossattn_ffn_block_time-end_selfattn_block_time)
-        return x
+        return x, times_for_rolling
 
 
 class CausalHead(nn.Module):
@@ -784,7 +743,7 @@ class CausalWanModel(ModelMixin, ConfigMixin):
             1, (6, self.dim)).unflatten(dim=0, sizes=t.shape)
         # assert e.dtype == torch.float32 and e0.dtype == torch.float32
         #torch.cuda.synchronize(x.device)
-        time_embedding_end_time=time.time()
+        # time_embedding_end_time=time.time()
         # print("###time for time embedding:",time_embedding_end_time-start_model_time)
 
         # context
@@ -831,6 +790,7 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         #         visual_x=visualize_latent_to_image(cur_x)
         #         cv2.imwrite(f"./outputs/dit/{self.count}_{index}_pre.png",visual_x)
 
+        times_for_rolling = 0
         for block_index, block in enumerate(self.blocks):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
                 assert False
@@ -845,15 +805,17 @@ class CausalWanModel(ModelMixin, ConfigMixin):
                         "crossattn_cache": crossattn_cache[block_index],
                         "current_start": current_start,
                         "current_end": current_end,
-                        "flow_guidance_cache": None if flow_guidance_cache==None or block_index>=5 else flow_guidance_cache[block_index],
+                        "flow_guidance_cache": None if flow_guidance_cache is None or block_index >= 5 else flow_guidance_cache[block_index],
                         "latent_flow_data": latent_flow_data,
+                        "times_for_rolling": times_for_rolling
                     }
                 )
-                x = block(x, **kwargs)
+                x, times_for_rolling = block(x, **kwargs)
                 #torch.cuda.synchronize(x.device)
                 block_end_time=time.time()
                 # print(f"###time for block {block_index} :",block_end_time-start_block_time)
                 start_block_time=block_end_time
+        print(f"total time for rolling cache in all blocks: {times_for_rolling:.2f} ms")
 
         # if(grid_sizes[0][0]==1):
         #     for index in range (x.shape[0]):
@@ -904,7 +866,6 @@ class CausalWanModel(ModelMixin, ConfigMixin):
                 CLIP image features for image-to-video mode
             y (List[Tensor], *optional*):
                 Conditional video inputs for image-to-video mode, same shape as x
-
         Returns:
             List[Tensor]:
                 List of denoised video tensors with original input shapes [C_out, F, H / 8, W / 8]

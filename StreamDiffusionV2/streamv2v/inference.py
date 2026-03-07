@@ -27,11 +27,11 @@ specified generation FPS (--fps_generate), mimicking a live input source like a 
     the original serial code to ensure bit-for-bit identical output.
 """
 import sys
-sys.path.append("../StreamDiffusionV2")
 sys.path.append("../")
 sys.path.append("../deps/gmflow")
 
 from causvid.models.wan.causal_stream_inference import CausalStreamInferencePipeline
+from causvid.models.wan.wan_base.modules import TAEHV, StreamingTAEHV
 from diffusers.utils import export_to_video
 from causvid.data import TextDataset
 from omegaconf import OmegaConf
@@ -43,14 +43,122 @@ import numpy as np
 import logging
 import threading
 import queue
+import traceback
+import cv2
+import json
+import urllib.request
+from typing import Optional
 
 import torchvision
+import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from einops import rearrange
 import torch.nn.functional as F
 
-from utils.optical_wrapper import GMFlowWrapper, RAFTFlowWrapper, OcclusionComputation, X265MVWrapper
-import cv2
+from utils.optical_wrapper import GMFlowWrapper, RAFTFlowWrapper, OcclusionComputation, X265MVWrapper, X265MVWrapper, OcclusionComputation
+from utils.vae_utils.mask_utils import (
+    build_gather_block_masks,
+    dilate_mask,
+    downsample_mask,
+    reduce_mask,
+    resolve_mask_for_res,
+)
+from utils.vae_utils.mem_stats import collect_scatter_cache_modules, feat_map_nbytes, format_bytes, scatter_cache_nbytes
+
+from deps.sige3d.torch_kernels.backend import set_kernel_backend
+
+from debugUtil import enable_custom_repr
+enable_custom_repr()
+
+LOG_HANDLERS = None
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+LOG_DATEFMT = '%Y-%m-%d %H:%M:%S'
+
+def configure_logger(name: str, level: int = logging.INFO) -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.propagate = False
+    handlers = LOG_HANDLERS or [logging.StreamHandler(sys.stdout)]
+    if not logger.handlers:
+        formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT)
+        for handler in handlers:
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+    return logger
+
+import random
+def set_seed(seed: int = 42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+class DotDict(dict):
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
+
+
+class TAEHVDiffusersWrapper(torch.nn.Module):
+    def __init__(self, checkpoint_path: str, dtype: torch.dtype = torch.float16):
+        super().__init__()
+        self.dtype = dtype
+        self.taehv = TAEHV(checkpoint_path=checkpoint_path).to(self.dtype)
+        self.streaming_encoder = StreamingTAEHV(self.taehv)
+        self.streaming_decoder = StreamingTAEHV(self.taehv)
+        self.config = DotDict(scaling_factor=1.0)
+
+    def stream_encode(self, video: torch.Tensor, mask: torch.Tensor, flow: torch.Tensor, is_nocache: bool) -> torch.Tensor:
+        del mask, flow
+        video = (video * 0.5 + 0.5).clamp(0, 1)
+        video = video.permute(0, 2, 1, 3, 4).contiguous()
+        latents = []
+        latent = self.streaming_encoder.encode(video)
+        while latent is not None:
+            latents.append(latent)
+            latent = self.streaming_encoder.encode()
+        if not latents:
+            raise RuntimeError("StreamingTAEHV encoder produced no latents for the input chunk.")
+        latents = torch.cat(latents, dim=1)
+        return latents.permute(0, 2, 1, 3, 4).contiguous()
+
+    def stream_decode_to_pixel(self, latent: torch.Tensor, mask: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+        del mask, flow
+        latent = latent.to(dtype=self.dtype)
+        frames = []
+        for latent_frame in latent.unbind(1):
+            frame = self.streaming_decoder.decode(latent_frame.unsqueeze(1))
+            if frame is not None:
+                frames.append(frame)
+            while True:
+                next_frame = self.streaming_decoder.decode()
+                if next_frame is None:
+                    break
+                frames.append(next_frame)
+        if not frames:
+            return None
+        video = torch.cat(frames, dim=1)
+        return video.mul(2).sub(1)
+
+
+def build_taehv_vae(device: torch.device, dtype: torch.dtype = torch.float16) -> TAEHVDiffusersWrapper:
+    taehv_checkpoint_path = "causvid/models/wan/wan_base/modules/taew2_1.pth"
+    if not os.path.exists(taehv_checkpoint_path):
+        logger = logging.getLogger("TAEHV")
+        logger.info("taew2_1.pth not found at %s, downloading...", taehv_checkpoint_path)
+        os.makedirs(os.path.dirname(taehv_checkpoint_path), exist_ok=True)
+        download_url = "https://github.com/madebyollin/taehv/raw/main/taew2_1.pth"
+        urllib.request.urlretrieve(download_url, taehv_checkpoint_path)
+        logger.info("Downloaded taew2_1.pth to %s", taehv_checkpoint_path)
+
+    vae = TAEHVDiffusersWrapper(checkpoint_path=taehv_checkpoint_path, dtype=dtype)
+    vae.eval()
+    vae.requires_grad_(False)
+    vae.to(device=device, dtype=dtype)
+    return vae
 from gmflow.geometry import flow_warp as universal_flow_warp
 import json
 
@@ -162,6 +270,10 @@ class OpticalFlowCalculator:
                     covered_area += region['area']
 
                 binary_mask = torch.from_numpy(final_mask_np).to(self.device)
+            elif self.occlusion_method == "gather_block":
+                raise RuntimeError(
+                    "gather_block uses raw residual map directly and should not call compute_binary_occlusion_mask()."
+                )
             else:
                 raise ValueError(f"Unsupported occlusion method: {self.occlusion_method}")
 
@@ -170,10 +282,10 @@ class OpticalFlowCalculator:
         return torch.stack(final_masks, dim=0).unsqueeze(1)
 
 
-    def calculate_flow(self, ref_frame: torch.Tensor, current_frame: torch.Tensor) -> tuple | None:
+    def calculate_flow(self, ref_frame: torch.Tensor, current_frame: torch.Tensor, top_k_percentage: float) -> tuple | None:
         if self.model is None: return None
 
-        if (self.flow_model_type=="x265"):
+        if (self.flow_model_type == "x265"):
             # print(self.x265_params)
             fwd_flow, bwd_flow = self.model.compute_flow_from_tensors(ref_frame, current_frame, **self.x265_params)
         else:
@@ -185,7 +297,13 @@ class OpticalFlowCalculator:
             bwd_occ = bwd_occ.unsqueeze(1)
             fwd_occ = fwd_occ.unsqueeze(1)
 
-        return bwd_flow, bwd_occ
+        if self.occlusion_method == "gather_block":
+            bwd_mask = bwd_occ[0, 0].to(torch.float32).contiguous()
+        else:
+            bwd_mask = self.compute_binary_occlusion_mask(bwd_occ)[0, 0]
+
+        bwd_flow_hw2 = bwd_flow[0].permute(1, 2, 0).contiguous().to(dtype=torch.float32)
+        return bwd_flow_hw2, bwd_mask
 
 def tensor_to_np_img(tensor: torch.Tensor) -> np.ndarray:
     """Converts a [-1, 1] or [0, 1] image tensor to a [0, 255] uint8 RGB numpy array."""
@@ -342,7 +460,7 @@ def compute_noise_scale_and_step(input_video_original: torch.Tensor, end_idx: in
 
 # --- SingleGPUInferencePipeline class (Logging format updated) ---
 class SingleGPUInferencePipeline:
-    def __init__(self, config, device: torch.device, use_cached_text_embedding: bool = False):
+    def __init__(self, config, device: torch.device, cache_min_downsample: int = 0, use_cached_text_embedding: bool = False):
         self.config = config
         self.device = device
         self.logger = logging.getLogger("SingleGPUInference")
@@ -357,8 +475,10 @@ class SingleGPUInferencePipeline:
 
         self.logger.info("Initializing CausalStreamInferencePipeline...")
         # <--- MODIFIED LINE: Pass the new argument to the pipeline --->
-        self.pipeline = CausalStreamInferencePipeline(config, device=str(device), text_encoder_on_cpu=True, use_cached_text_embedding=use_cached_text_embedding)
-        self.pipeline.to(device=str(device), dtype=torch.bfloat16)
+        self.pipeline = CausalStreamInferencePipeline(config, device=str(device), text_encoder_on_cpu=True, cache_min_downsample=cache_min_downsample, use_cached_text_embedding=use_cached_text_embedding)
+        self.pipeline.to(device=str(device), dtype=torch.float16)
+        self.vae_encoder = self.pipeline.vae
+        self.vae_decoder = self.pipeline.vae
         self.logger.info("Single GPU inference pipeline manager initialized")
 
     def load_model(self, checkpoint_folder: str):
@@ -372,9 +492,28 @@ class SingleGPUInferencePipeline:
             self.logger.warning(f"Strict load_state_dict failed: {e}; retrying with strict=False")
             self.pipeline.generator.load_state_dict(state_dict, strict=False)
 
+    def set_vae_backend(self, vae_backend: str):
+        if vae_backend == "taehv":
+            taehv = build_taehv_vae(self.device, dtype=torch.float16)
+            self.vae_encoder = taehv
+            self.vae_decoder = taehv
+            self.pipeline.vae = taehv
+            self.logger.info("Using TAEHV encoder + TAEHV decoder.")
+            return
+
+        if vae_backend == "wan-taehv":
+            taehv = build_taehv_vae(self.device, dtype=torch.float16)
+            self.vae_encoder = self.pipeline.vae
+            self.vae_decoder = taehv
+            self.pipeline.vae = taehv
+            self.logger.info("Using WanVAE encoder + TAEHV decoder.")
+            return
+
+        self.logger.info("Using WanVAE encoder + WanVAE decoder.")
+
     def prepare_pipeline(self, text_prompts: list, noise: torch.Tensor, current_start: int, current_end: int):
         return self.pipeline.prepare(
-            text_prompts=text_prompts, device=self.device, dtype=torch.bfloat16,
+            text_prompts=text_prompts, device=self.device, dtype=torch.float16,
             block_mode='input', noise=noise, current_start=current_start, current_end=current_end
         )
 
@@ -384,15 +523,7 @@ class ParallelInferenceOrchestrator:
         self.pipeline_manager = pipeline_manager
         self.pipeline = pipeline_manager.pipeline
         self.device = pipeline_manager.device
-        self.logger = logging.getLogger("ParallelOrchestrator")
-        self.logger.setLevel(logging.INFO)
-        self.logger.propagate = False
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            # Updated formatter to match target log
-            formatter = logging.Formatter('%(asctime)s,%(msecs)03d - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
+        self.logger = configure_logger("ParallelOrchestrator")
 
         self.producer_stream = torch.cuda.Stream(device=self.device)
         self.consumer_stream = torch.cuda.Stream(device=self.device)
@@ -402,11 +533,52 @@ class ParallelInferenceOrchestrator:
         self.producer_thread = None
         self.saver_thread = None
         self.processed = 0
+        self.producer_error = None
+
+    def _producer_task_wrapper(self, *args, **kwargs):
+        try:
+            self._producer_task(*args, **kwargs)
+        except Exception as e:
+            tb = traceback.format_exc()
+            self.producer_error = (e, tb)
+            self.logger.error("Producer thread failed.", exc_info=True)
+            try:
+                # Unblock consumer so it can surface the error.
+                self.data_queue.put((None, self.producer_error, None, None, "ERROR"), timeout=1)
+            except Exception:
+                pass
+
+    def _raise_if_producer_error(self, noisy_latents, current_step, flow_data, producer_done_event, chunk_id):
+        if chunk_id == "ERROR":
+            err, tb = current_step
+            raise RuntimeError(f"Producer thread failed: {err}\n{tb}")
+
+    def _get_from_queue_or_raise(self):
+        while True:
+            if self.producer_error is not None:
+                err, tb = self.producer_error
+                raise RuntimeError(f"Producer thread failed: {err}\n{tb}")
+            try:
+                item = self.data_queue.get(timeout=1)
+            except queue.Empty:
+                if self.producer_thread is not None and not self.producer_thread.is_alive():
+                    raise RuntimeError("Producer thread exited without producing data.")
+                continue
+            self._raise_if_producer_error(*item)
+            return item
+
+    def _stream_encode(self, video: torch.Tensor, mask: torch.Tensor, flow: torch.Tensor, is_nocache: bool) -> torch.Tensor:
+        return self.pipeline_manager.vae_encoder.stream_encode(video, mask, flow, is_nocache=is_nocache)
+
+    def _stream_decode_to_pixel(self, latents: torch.Tensor, mask: torch.Tensor, flow: torch.Tensor):
+        return self.pipeline_manager.vae_decoder.stream_decode_to_pixel(latents, mask, flow)
         self.prev_latent=None
 
     def _producer_task(self, input_video_original: torch.Tensor,
                        flow_calculator: OpticalFlowCalculator,
-                       num_chunks: int, chunk_size: int, noise_scale: float, num_steps: int, fps_generate: int):
+                       num_chunks: int, chunk_size: int, noise_scale: float,
+                       num_steps: int, fps_generate: int, mask_dilate: int, min_res: tuple[int, int],
+                       occlusion_method: str, top_k_percentage: float, is_nocache: bool):
         self.logger.info("Producer thread started.")
 
         # torch.cuda.synchronize(device=self.device)
@@ -421,6 +593,10 @@ class ParallelInferenceOrchestrator:
         # 用于维持稳定生产速率的时间锚点
         next_chunk_submit_time = time.time()
 
+        # flow = None
+        # masks_enc = None
+        # masks_dec = None
+
         with torch.cuda.stream(self.producer_stream):
             # --- 1. 为"冷启动" / prepare() 调用生产数据 ---
             start_idx, end_idx = 0, 5
@@ -429,28 +605,22 @@ class ParallelInferenceOrchestrator:
 
             if input_video_original is not None:
                 inp = input_video_original[:, :, start_idx:end_idx].to(self.device, non_blocking=True)
-                latents = self.pipeline.vae.stream_encode(inp)
+                latents = self._stream_encode(inp, None, None, is_nocache)
                 latents = latents.transpose(2, 1).contiguous()
                 noise = torch.randn_like(latents)
                 noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
             else:
-                noisy_latents = torch.randn(1, 1 + self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.bfloat16)
+                noisy_latents = torch.randn(1, 1 + self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.float16)
 
             prod_end_event.record()
-            # self.data_queue.put((noisy_latents, None, prod_end_event, "Initial"))
             self.data_queue.put((noisy_latents, None, None, prod_end_event, "Initial"))
             self.logger.info(f"Producer: Initial 5-frame data block placed in queue.{time.time()-next_chunk_submit_time}")
+
 
             # --- 2. 为"热循环"生产数据 ---
             init_noise_scale = noise_scale
             total_hot_chunks = num_chunks + num_steps - 1
-
-            self.prev_latent=None
-
-            # torch.cuda.synchronize(device=self.device)
-            # mem_prepare_end = torch.cuda.memory_reserved(device=self.device)
-            # print("GPU memory used by producer during prepare(): ", (mem_prepare_end - mem_producer_start)/1024/1024/1024, "GB","from",mem_producer_start/1024/1024/1024,"GB to",mem_prepare_end/1024/1024/1024,"GB")
-
+            ref_frame_idx = 4
             for i in range(total_hot_chunks):
                 # --- [修正后] 的 FPS 节流逻辑 ---
                 if is_realtime_sim:
@@ -470,96 +640,64 @@ class ParallelInferenceOrchestrator:
                 start_idx = end_idx
                 end_idx += chunk_size
                 prod_end_event = torch.cuda.Event(enable_timing=True)
-                flow_data=None
+                flow_data = None
                 if input_video_original is not None and end_idx <= input_video_original.shape[2]:
-                    inp = input_video_original[:, :, start_idx:end_idx].to(self.device, non_blocking=True)
+                    inp = input_video_original[:, :, start_idx:end_idx].to(self.device)
+                    cur_frame_idx = end_idx - 1
+
+                    self.logger.info(f"Chunk {chunk_id}: calculating flow Frame {ref_frame_idx} -> {cur_frame_idx}")
+                    ref_frame_tensor = input_video_original[:, :, ref_frame_idx].to(self.device, torch.float32)
+                    cur_frame_tensor = input_video_original[:, :, cur_frame_idx].to(self.device, torch.float32)
+
+                    flow_data = flow_calculator.calculate_flow(ref_frame_tensor, cur_frame_tensor, top_k_percentage)
+                    bwd_flow, bwd_occ = flow_data
+
+                    if occlusion_method == "gather_block":
+                        masks_enc = build_gather_block_masks(bwd_occ, top_k_percentage)
+                    else:
+                        # Encoder masks
+                        mask_enc = dilate_mask(bwd_occ, int(mask_dilate))
+                        masks_enc = downsample_mask(
+                            mask_enc,
+                            min_res=tuple(min_res),
+                            dilation=int(mask_dilate),
+                        )
+
+                    ref_frame_idx = cur_frame_idx
+
+                    # start_event = torch.cuda.Event(enable_timing=True)
+                    # end_event = torch.cuda.Event(enable_timing=True)
+                    # torch.cuda.synchronize()  # 保证前面操作完成
+                    # start_event.record()
+
+                    latents = self._stream_encode(inp, mask=masks_enc, flow=bwd_flow, is_nocache=is_nocache)
+
+                    # end_event.record()
+                    # torch.cuda.synchronize()
+                    # elapsed_time_ms = start_event.elapsed_time(end_event)
+                    # print(f"stream_encode GPU time: {elapsed_time_ms:.3f} ms")
+
+                    latents = latents.transpose(2, 1).contiguous()
+
                     noise_scale, current_step = compute_noise_scale_and_step(
                         input_video_original, end_idx, chunk_size, noise_scale, init_noise_scale
                     )
-                    latents = self.pipeline.vae.stream_encode(inp)
-                    latents = latents.transpose(2, 1).contiguous()
                     noise = torch.randn_like(latents)
                     noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
-                    # print(flow_calculator.device)
-                    if flow_calculator is not None and chunk_id>1:
-                        ref_frame_idx = start_idx -1
-                        target_frame_idx = end_idx-1
-                        ref_frame_tensor = input_video_original[:, :, ref_frame_idx].to(device=self.device,dtype=torch.float32, non_blocking=True)
-                        target_frame_tensor = input_video_original[:, :, target_frame_idx].to(self.device,dtype=torch.float32, non_blocking=True)
-                        # self.logger.info(f"prepare float data {time.time()-current_time}")
-                        self.logger.info(f"Producer: Submitting batched flow calculation for chunk {chunk_id}...")
-                        flow_data = flow_calculator.calculate_flow(ref_frame_tensor,target_frame_tensor)
-                        self.logger.info(f"Producer: Batched flow calculation for chunk {chunk_id} enqueued on GPU stream.")
-
-                        # bwd_flow,bwd_occ=flow_data
-                        # print(bwd_flow.shape,bwd_occ.shape,bwd_flow.dtype,bwd_occ.dtype)
-                        # bwd_flow=torch.ones((1,2,480,832)).to(dtype=torch.float32,device=ref_frame_tensor.device)
-                        # bwd_occ=torch.ones((1,1,480,832)).to(dtype=torch.float32,device=ref_frame_tensor.device)
-                        # flow_data=bwd_flow,bwd_occ
                 else:
-                    noisy_latents = torch.randn(1, self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.bfloat16)
+                    noisy_latents = torch.randn(1, self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.float16)
                     current_step = None
 
-                ##visualize
-
-
-                if (flow_data!=None):
-                    bwd_flow,bwd_occ=flow_data
-                    # warped_frame = universal_flow_warp(ref_frame_tensor, bwd_flow)
-                    # pixel_binary_mask = flow_calculator.compute_binary_occlusion_mask(bwd_occ)
-                    # occluded_warped_frame = torch.where(
-                    #     pixel_binary_mask.to(device=warped_frame.device),
-                    #     torch.zeros_like(warped_frame),
-                    #     warped_frame
-                    # )
-                    # viz_frame_n = tensor_to_np_img(ref_frame_tensor)
-                    # viz_frame_n1 = tensor_to_np_img(target_frame_tensor)
-                    # # viz_warped_frame = tensor_to_np_img(occluded_warped_frame)
-                    # viz_warped_frame = tensor_to_np_img(warped_frame)
-                    # viz_frame_flow = visualize_flow_to_rgb(bwd_flow, vector_stride=20)
-                    # viz_frame_compo=visualize_flow_with_source_overlay(viz_frame_n, viz_frame_n1, viz_frame_flow, alpha=0.4)
-                    # pixel_row = np.concatenate([viz_frame_n, viz_frame_n1, viz_warped_frame, viz_frame_compo], axis=1)
-                    # final_image= pixel_row
-                    # save_path = os.path.join("./outputs/warped", f"comparison_chunk_{chunk_id:04d}.png")
-                    # cv2.imwrite(save_path, cv2.cvtColor(final_image, cv2.COLOR_RGB2BGR))
-
-                    latent_n_repr = self.prev_latent.squeeze(1)
-                    latent_n1_repr = latents.squeeze(1)
-                    _, _, latent_h, latent_w = latent_n_repr.shape
-
-                    downsampled_flow = F.interpolate(bwd_flow, size=(latent_h, latent_w), mode='bilinear', align_corners=False)
-                    downsampled_flow *= (float(latent_h) / bwd_flow.shape[2])
-                    warped_latent = universal_flow_warp(latent_n_repr.float(), downsampled_flow.float())
-                    downsampled_occ = F.interpolate(bwd_occ, size=(latent_h, latent_w), mode='bilinear', align_corners=False)
-                    latent_binary_mask = flow_calculator.compute_binary_occlusion_mask(downsampled_occ)
-                    fused_latent_repr = torch.where(latent_binary_mask, latent_n1_repr, warped_latent).to(dtype=latents.dtype)
-                    latents=fused_latent_repr
-                    # print(i,torch.mean((latents-latent_n1_repr)**2).item())
-                    noise = torch.randn_like(latents)
-                    noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
-
-                    target_h=latent_h//2
-                    target_w=latent_w//2
-                    downsampled_flow = F.interpolate(bwd_flow, size=(target_h, target_w), mode='bilinear', align_corners=False)
-                    downsampled_flow *= (float(target_h) / bwd_flow.shape[2])
-                    downsampled_occ= F.interpolate(bwd_occ, size=(target_h, target_w), mode='bilinear', align_corners=False)
-                    latent_binary_mask = flow_calculator.compute_binary_occlusion_mask(downsampled_occ)
-                    flow_data= (downsampled_flow,latent_binary_mask)
-                    # print("in producer",i, torch.mean(downsampled_flow),torch.mean(latent_binary_mask.float()))
-                    # flow_data=None
-
-
-
                 prod_end_event.record()
-                self.prev_latent=latents
                 self.data_queue.put((noisy_latents, current_step, flow_data, prod_end_event, chunk_id))
 
                 if chunk_id <= num_chunks:
                     self.logger.info(f"Producer: Real data chunk {chunk_id}/{num_chunks} placed in queue. ")
+                    self.logger.info(f"Queue len: {self.data_queue.qsize()}")
                 else:
                     flush_chunk_id = chunk_id - num_chunks
                     total_flush_chunks = num_steps - 1
-                    self.logger.info(f"Producer: Flush chunk {flush_chunk_id}/{total_flush_chunks} placed in queue. ")
+                    self.logger.info(f"Producer: Flush chunk {flush_chunk_id}/{total_flush_chunks} placed in queue.")
 
         self.logger.info("Producer thread finished. All data blocks produced.")
 
@@ -601,6 +739,7 @@ class ParallelInferenceOrchestrator:
             self.logger.info(f"Average End-to-End FPS (Saver-side, after pipeline fill): {avg_fps:.4f}")
         self.logger.info("Saver thread finished.")
 
+
     def run_parallel_inference(
         self,
         input_video_original: torch.Tensor,
@@ -612,7 +751,13 @@ class ParallelInferenceOrchestrator:
         output_folder: str,
         fps: int,
         num_steps: int,
-        fps_generate: int
+        fps_generate: int,
+        mask_dilate: int,
+        min_res: tuple[int, int],
+        occlusion_method: str,
+        top_k_percentage: float,
+        # profile_consumer: bool = False,
+        is_nocache: bool,
     ):
         # torch.cuda.synchronize(device=self.device)
         # mem_run_start = torch.cuda.memory_reserved(device=self.device)
@@ -621,15 +766,23 @@ class ParallelInferenceOrchestrator:
         self.logger.info("Consumer started. Replicating original inference logic with detailed timing.")
         os.makedirs(output_folder, exist_ok=True)
 
-        flow_viz_folder = os.path.join(output_folder, "flow_visualizations")
-        if flow_calculator is not None and flow_calculator.model is not None:
-            os.makedirs(flow_viz_folder, exist_ok=True)
+        scatter_cache_modules = collect_scatter_cache_modules(self.pipeline_manager.vae_encoder)
 
         self.producer_thread = threading.Thread(
-            target=self._producer_task,
+            target=self._producer_task_wrapper,
             args=(input_video_original,
-                  flow_calculator,
-                   num_chunks, chunk_size, noise_scale, num_steps, fps_generate)
+                    flow_calculator,
+                    num_chunks,
+                    chunk_size,
+                    noise_scale,
+                    num_steps,
+                    fps_generate,
+                    mask_dilate,
+                    min_res,
+                    occlusion_method,
+                    top_k_percentage,
+                    is_nocache,
+                )
         )
         self.producer_thread.start()
 
@@ -647,7 +800,7 @@ class ParallelInferenceOrchestrator:
         try:
             # --- 3. Process the "Cold Start" data from the queue ---
             self.logger.info("Consumer: Waiting for initial data block...")
-            initial_noisy_latents, current_step, flows_for_chunk,producer_done_event, chunk_id= self.data_queue.get()
+            initial_noisy_latents, current_step, flow_data, producer_done_event, chunk_id = self._get_from_queue_or_raise()
 
             with torch.cuda.stream(self.consumer_stream):
                 self.consumer_stream.wait_event(producer_done_event)
@@ -660,13 +813,13 @@ class ParallelInferenceOrchestrator:
                     current_start=current_start,
                     current_end=current_end
                 )
-                video = self.pipeline.vae.stream_decode_to_pixel(denoised_pred)
-
-                # self.consumer_stream.synchronize()
+                video = self._stream_decode_to_pixel(denoised_pred, None, None)
+                if video is None:
+                    raise RuntimeError("Streaming VAE decoder produced no frames for the initial block.")
 
                 video = (video * 0.5 + 0.5).clamp(0, 1)
                 video = video[0].permute(0, 2, 3, 1).contiguous()
-                self.save_queue.put((video.to('cpu', non_blocking=True), save_results))
+                self.save_queue.put((video.to('cpu', non_blocking=False), save_results))
                 save_results += 1
                 self.logger.info("Consumer: Initial block processed and enqueued for saving.")
 
@@ -679,10 +832,18 @@ class ParallelInferenceOrchestrator:
             # torch.cuda.synchronize(device=self.device)
             # mem_run_end = torch.cuda.memory_reserved(device=self.device)
             # print("GPU memory used by consumer during run(): ", (mem_run_end - mem_run_start)/1024/1024/1024, "GB","from",mem_run_start/1024/1024/1024,"GB to",mem_run_end/1024/1024/1024,"GB")
+
             # --- 4. Process "Hot Loop" data from the queue ---
             last_save_time = time.time() # Initialize timer for first iteration
             while self.processed < num_chunks + num_steps - 1:
-                noisy_latents, current_step, flows_for_chunk,producer_done_event, chunk_id = self.data_queue.get()
+                # iter_start_cpu = time.perf_counter()
+                # queue_start = time.perf_counter()
+                noisy_latents, current_step, flow_data, producer_done_event, chunk_id = self._get_from_queue_or_raise()
+                # queue_wait_s = time.perf_counter() - queue_start
+                # print("*" * 40)
+                # print(f"Queue wait time: {queue_wait_s:.4f}s")
+                # print("*" * 40)
+
 
                 with torch.cuda.stream(self.consumer_stream):
                     self.consumer_stream.wait_event(producer_done_event)
@@ -695,20 +856,50 @@ class ParallelInferenceOrchestrator:
                         current_start=current_start,
                         current_end=current_end,
                         current_step=current_step,
-                        latent_flow_data=flows_for_chunk,
+                        # latent_flow_data=flow_data,
+                        latent_flow_data=None,
                     )
 
                     video_out = None
                     if self.processed + 1 >= num_steps:
-                        video_out = self.pipeline.vae.stream_decode_to_pixel(denoised_pred[[-1]])
+                        # Decoder sparse only at low resolutions; build masks once per chunk.
+                        if flow_data is not None:
+                            bwd_flow, bwd_occ = flow_data
+                            if occlusion_method == "gather_block":
+                                masks_dec = build_gather_block_masks(bwd_occ, top_k_percentage)
+                            else:
+                                # Encoder masks
+                                mask_dec = dilate_mask(bwd_occ, int(mask_dilate))
+                                masks_dec = downsample_mask(
+                                    mask_dec,
+                                    min_res=tuple(min_res),
+                                    dilation=int(mask_dilate),
+                                )
 
-                    # self.consumer_stream.synchronize()
+                        # start_event = torch.cuda.Event(enable_timing=True)
+                        # end_event = torch.cuda.Event(enable_timing=True)
+                        # torch.cuda.synchronize()  # 保证前面操作完成
+                        # start_event.record()
+
+                        video_out = self._stream_decode_to_pixel(denoised_pred[[-1]], mask=None, flow=None)
+
+                        # end_event.record()
+                        # torch.cuda.synchronize()
+                        # elapsed_time_ms = start_event.elapsed_time(end_event)
+                        # print(f"stream_decode GPU time: {elapsed_time_ms:.3f} ms")
+
+
                     self.processed += 1
+
+                    print(
+                        # f"feat_map={format_bytes(feat_map_nbytes(self.pipeline_manager.vae_encoder.model))} "
+                        f"scatter_total={format_bytes(scatter_cache_nbytes(scatter_cache_modules))}"
+                    )
 
                     if video_out is not None:
                         video = (video_out * 0.5 + 0.5).clamp(0, 1)
                         video = video[0].permute(0, 2, 3, 1).contiguous()
-                        self.save_queue.put((video.to('cpu', non_blocking=True), save_results))
+                        self.save_queue.put((video.to('cpu', non_blocking=False), save_results))
 
                         # video = (video_out * 0.5 + 0.5).clamp(0, 1)
                         # video = video[0].permute(0, 2, 3, 1).contiguous()
@@ -742,18 +933,21 @@ class ParallelInferenceOrchestrator:
             video_list = [results[i] for i in range(save_results)]
             video = np.concatenate(video_list, axis=0)
 
-            video=video[:input_video_original.shape[2]]
+            print(f"Video shape before trimming: {video.shape}")
+            video = video[:input_video_original.shape[2]]
 
             # --- NEW: Final FPS calculation based on actual iteration times ---
             if iteration_times:
-                avg_iter_time = np.mean(iteration_times)
+                avg_iter_time = np.mean(iteration_times[1:])  # Modification: Skip the first iteration
                 avg_fps = chunk_size / avg_iter_time
                 self.logger.info(f"Average End-to-End FPS (Consumer-side, after pipeline fill): {avg_fps:.4f}")
 
             self.logger.info(f"Final video shape: {video.shape}")
 
-            output_path = os.path.join(output_folder, f"output_parallel_timed.mp4")
+            output_path = os.path.join(output_folder, f"output_{occlusion_method}_{top_k_percentage}_steps_{num_steps}.mp4")
+
             export_to_video(video, output_path, fps=fps)
+
             self.logger.info(f"Video saved to: {output_path}")
             self.logger.info("Parallel inference with timing completed.")
 
@@ -772,17 +966,70 @@ def main():
     parser.add_argument("--fps_generate", type=int, default=30, help="Target FPS for the producer (VAE encode) thread. Simulates a camera. If 0, runs as fast as possible. Default: 0.")
     parser.add_argument("--step", type=int, default=2, help="Step")
     parser.add_argument("--model_type", type=str, default="T2V-1.3B", help="Model type (e.g., T2V-1.3B)")
-    parser.add_argument("--num_frames", type=int, default=81, help="Video length (number of frames)")
-    parser.add_argument("--flow_model", type=str, default=None, help="Optical flow model to use (from calflow). If None, flow is not calculated.")
-    parser.add_argument("--x265_params", type=str, default='{"stage": "encode"}', help="x265 parameters as a JSON string. e.g., '{\"stage\": \"lookahead\"}'")
-    parser.add_argument("--occlusion_method", type=str, default="quantile", choices=["exact","quantile", "morphological", "connected_components"], help="Method to generate occlusion mask.")
+    parser.add_argument(
+        "--vae_type",
+        type=str.lower,
+        default="wanvae",
+        choices=["wanvae", "taehv", "wan-taehv"],
+        help="VAE backend: wanvae, taehv, or wan-taehv (Wan encoder + TAEHV decoder).",
+    )
+    parser.add_argument("--max_frames", type=int, default=None, help="Video length (number of frames)")
+    parser.add_argument("--flow_model", type=str, default="x265", choices=["gmflow", "raft", "x265", "none"], help="Optical flow model to use (from calflow). If None, flow is not calculated.")
+    parser.add_argument("--x265_params", type=str, default='{"stage":"lookahead", "quiet":true}', help="x265 parameters as a JSON string. e.g., '{\"stage\": \"lookahead\"}'")
+    parser.add_argument("--occlusion_method", type=str, default="quantile", choices=["quantile", "morphological", "connected_components", "gather_block"], help="Method to generate occlusion mask.")
     parser.add_argument("--top_k_percentage", type=float, default=0.1, help="Top percentage of occlusion values to consider as masked.")
     parser.add_argument("--use_cached_text_embedding", action="store_true", help="If set, load pre-computed text embeddings from 'cached_text_embedding.pt' instead of initializing the text encoder.")
+    parser.add_argument("--morph_kernel_size", type=int, default=7, help="Kernel size for morphological opening operation.")
+    parser.add_argument("--mask_dilate", type=int, default=6, help="Dilation (pixels) applied to the base update mask before downsample_mask().")
+    parser.add_argument("--min_res", nargs=2, type=int, default=(40, 40), metavar=("H", "W"), help="Minimum resolution for downsampled masks passed to SIGE (GMFlow).")
+    # parser.add_argument("--profile_consumer", action="store_true", help="Enable detailed per-iteration consumer timing breakdown.")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--is_nocache", action="store_true", default=False, help="If is_nocache is True, Wan VAE Encoder compute fully!")
+    parser.add_argument(
+        "--cache_min_downsample",
+        type=float,
+        default=0,
+        help=(
+            "If >0, enable decoder sparse compute for feature resolutions <= (H//ds, W//ds). "
+            "Larger resolutions will run full compute without decoder scatter cache."
+        ),
+    )
+    def _kernel_backend(v: str) -> str:
+        v = (v or "").strip().lower()
+        if v in {"pytorch", "torch"}:
+            return "pytorch"
+        if v in {"cuda", "ext"}:
+            return "cuda"
+        raise argparse.ArgumentTypeError("Expected 'PyTorch' or 'CUDA'.")
+
+    parser.add_argument(
+        "--sige_kernels",
+        type=_kernel_backend,
+        default="cuda",
+        help="SIGE gather/scatter kernel backend: PyTorch (default) or CUDA.",
+    )
+
     args = parser.parse_args()
+    set_seed(args.seed)
+
+    set_kernel_backend(args.sige_kernels)
 
     torch.set_grad_enabled(False)
-    # Updated root logger to match target format
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s,%(msecs)03d - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+    os.makedirs(args.output_folder, exist_ok=True)
+    log_file = os.path.join(args.output_folder, f"{args.occlusion_method}_{args.top_k_percentage}_run.log")
+    handlers = [
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(log_file, mode="w", encoding="utf-8"),
+    ]
+    global LOG_HANDLERS
+    LOG_HANDLERS = handlers
+    logging.basicConfig(
+        level=logging.INFO,
+        format=LOG_FORMAT,
+        datefmt=LOG_DATEFMT,
+        handlers=handlers,
+    )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     flow_calculator = None
@@ -795,14 +1042,14 @@ def main():
             logging.warning(f"Adjusting resolution from {args.height}x{args.width} to {new_height}x{new_width}.")
         resize_hw = (new_height, new_width)
         args.height, args.width = new_height, new_width
-        input_video_original, original_fps = load_mp4_as_tensor(args.video_path, resize_hw=resize_hw, device=device)
+        input_video_original, original_fps = load_mp4_as_tensor(args.video_path, resize_hw=resize_hw, max_frames=args.max_frames)
 
         args.fps=original_fps
 
         input_video_original = input_video_original.unsqueeze(0)
         logging.info(f"Input video tensor shape: {input_video_original.shape}")
         t = input_video_original.shape[2]
-        input_video_original = input_video_original.to(dtype=torch.bfloat16)
+        input_video_original = input_video_original.to(dtype=torch.float16)
 
         if args.flow_model!=None:
             logging.info(f"Preparing for optical flow calculation with model: {args.flow_model}")
@@ -834,7 +1081,8 @@ def main():
     num_chunks = (t - 5) // chunk_size
     if ((t-5)%chunk_size!=0): num_chunks+=1
 
-    pipeline_manager = SingleGPUInferencePipeline(config, device, use_cached_text_embedding=args.use_cached_text_embedding)
+    pipeline_manager = SingleGPUInferencePipeline(config, device, args.cache_min_downsample, use_cached_text_embedding=args.use_cached_text_embedding)
+    pipeline_manager.set_vae_backend(args.vae_type)
     pipeline_manager.load_model(args.checkpoint_folder)
 
     num_steps = len(pipeline_manager.pipeline.denoising_step_list)
@@ -855,11 +1103,21 @@ def main():
             args.output_folder,
             args.fps,
             num_steps,
-            args.fps_generate
+            args.fps_generate,
+            args.mask_dilate,
+            args.min_res,
+            args.occlusion_method,
+            args.top_k_percentage,
+            # args.profile_consumer,
+            args.is_nocache,
         )
     except Exception as e:
         logging.error(f"Error occurred during inference: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
+    torch.cuda.reset_peak_memory_stats()
     main()
+    peak_mem = torch.cuda.max_memory_allocated()
+
+    print(f"Peak GPU memory: {peak_mem / 1024**3:.2f} GB")

@@ -3,6 +3,7 @@ from .model import WanModel
 from .t5 import T5Decoder, T5Encoder, T5EncoderModel, T5Model
 from .tokenizers import HuggingfaceTokenizer
 from .vae import WanVAE
+from .taehv import TAEHV, StreamingTAEHV
 
 __all__ = [
     'WanVAE',
@@ -13,4 +14,6 @@ __all__ = [
     'T5EncoderModel',
     'HuggingfaceTokenizer',
     'flash_attention',
+    'TAEHV',
+    'StreamingTAEHV',
 ]

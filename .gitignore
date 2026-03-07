@@ -2,6 +2,23 @@
 **/.vscode/**
 **/data/**
 **/x265_log/**
+**/assets/**
+**/ret/**
+**/input/**
+**/output/**
+**/outputs/**
+**/logs/**
+
+# 忽略evaluation文件夹下生成的内容
+/StreamDiffusionV2/evaluation/prompts/
+/StreamDiffusionV2/evaluation/clip_scores/
+/StreamDiffusionV2/evaluation/warp_errors/
+
+taew2_1.pth
+
+# 忽略test 文件
+test_3d_vae
+
 /motion_compensation/test_visual/
 /motion_compensation/visual/
 /motion_compensation/test_visual_from_pngs/

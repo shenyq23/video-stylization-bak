@@ -7,9 +7,11 @@ from typing import List
 import torch
 import torch.distributed as dist
 import time
+import os
+import hashlib
 
 class CausalStreamInferencePipeline(torch.nn.Module):
-    def __init__(self, args, device, text_encoder_on_cpu: bool = False, use_cached_text_embedding: bool = False):
+    def __init__(self, args, device, text_encoder_on_cpu: bool = False, cache_min_downsample: int = 0, use_cached_text_embedding: bool = True):
         super().__init__()
         model_type = args.model_type
         self.device = device
@@ -32,6 +34,17 @@ class CausalStreamInferencePipeline(torch.nn.Module):
 
         self.vae = get_vae_wrapper(model_name=args.model_name)(model_type=model_type)
 
+        if cache_min_downsample > 0:
+            ds = cache_min_downsample
+            h0, w0 = int(args.height), int(args.width)
+            decoder_sparse_max_hw = (max(h0 // ds, 1), max(w0 // ds, 1))
+            self.vae.model.decoder.set_cache_max_res(decoder_sparse_max_hw)
+            self.vae.model.decoder_sparse_max_res = decoder_sparse_max_hw
+            print("*" * 40)
+            print(f"[DecoderSparse] downsample={ds} -> max_sparse_hw={decoder_sparse_max_hw}")
+            print("*" * 40)
+
+
         # Step 2: Initialize all causal hyperparmeters
         self._init_denoising_step_list(args, device)
 
@@ -47,7 +60,7 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         self.height = args.height//scale_size*2
         self.width = args.width//scale_size*2
         self.frame_seq_length = (args.height//scale_size) * (args.width//scale_size)
-        self.kv_cache_length = self.frame_seq_length*args.num_kv_cache
+        self.kv_cache_length = self.frame_seq_length * args.num_kv_cache
         self.num_sink_tokens = args.num_sink_tokens
         self.adapt_sink_threshold = args.adapt_sink_threshold
 
@@ -66,7 +79,6 @@ class CausalStreamInferencePipeline(torch.nn.Module):
             self.generator.model.num_frame_per_block = self.num_frame_per_block
 
         # self.generator.model.to(self.device)
-        self.flow_guidance_cache = None
 
     def to(self, device=None, dtype=None, non_blocking=False):
         """
@@ -158,6 +170,7 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         batch_size = noise.shape[0]
 
         cached_embedding_path = f"./text_cache/cached_text_embedding_{text_prompts[0][:20]}.pt"
+        os.makedirs("./text_cache", exist_ok=True)
 
         if self.use_cached_text_embedding:
             print(f"Attempting to load cached text embedding from '{cached_embedding_path}'...")
@@ -192,7 +205,6 @@ class CausalStreamInferencePipeline(torch.nn.Module):
                 dtype=dtype,
                 device=device
             )
-            self.flow_guidance_cache=torch.zeros([self.num_transformer_blocks,len(self.denoising_step_list), self.frame_seq_length, self.num_heads*128], dtype=dtype, device=device)
         else:
             # reset cross attn cache
             for block_index in range(self.num_transformer_blocks):
@@ -305,7 +317,7 @@ class CausalStreamInferencePipeline(torch.nn.Module):
 
         return denoised_pred
 
-    def inference_stream(self, noise: torch.Tensor, current_start: int, current_end: int, current_step: int,latent_flow_data=None) -> torch.Tensor:
+    def inference_stream(self, noise: torch.Tensor, current_start: int, current_end: int, current_step: int, latent_flow_data=None) -> torch.Tensor:
         # print(self.hidden_states.dtype,self.hidden_states.shape,self.kv_cache_starts.dtype,self.kv_cache_starts.shape,noise.shape)
         #torch.cuda.synchronize(device=self.device)
         inference_stream_start_time= time.time()
@@ -315,13 +327,12 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         self.kv_cache_starts[1:] = self.kv_cache_starts[:-1].clone()
         self.kv_cache_starts[0] = current_start
 
-        if (latent_flow_data!=None):
-            # print("test dtype",self.latent_flow_data['flow'].dtype,latent_flow_data[0].dtype,self.latent_flow_data['mask'].dtype,latent_flow_data[1].dtype)
-            self.latent_flow_data['flow'][1:] = self.latent_flow_data['flow'][:-1].clone()
-            self.latent_flow_data['flow'][0] = latent_flow_data[0].squeeze(0)
-            self.latent_flow_data['mask'][1:] = self.latent_flow_data['mask'][:-1].clone()
-            self.latent_flow_data['mask'][0] = latent_flow_data[1].squeeze(0)
-
+        # if (latent_flow_data != None):
+        #     # print("test dtype",self.latent_flow_data['flow'].dtype,latent_flow_data[0].dtype,self.latent_flow_data['mask'].dtype,latent_flow_data[1].dtype)
+        #     self.latent_flow_data['flow'][1:] = self.latent_flow_data['flow'][:-1].clone()
+        #     self.latent_flow_data['flow'][0] = latent_flow_data[0].squeeze(0)
+        #     self.latent_flow_data['mask'][1:] = self.latent_flow_data['mask'][:-1].clone()
+        #     self.latent_flow_data['mask'][0] = latent_flow_data[1].squeeze(0)
 
         # #torch.cuda.synchronize(device=self.device)
         # clone_end_time= time.time()
@@ -336,12 +347,11 @@ class CausalStreamInferencePipeline(torch.nn.Module):
             kv_cache=self.kv_cache1,
             crossattn_cache=self.crossattn_cache,
             current_start=self.kv_cache_starts,
-            flow_guidance_cache=self.flow_guidance_cache,
-            latent_flow_data=None if latent_flow_data==None else self.latent_flow_data,
+            latent_flow_data = None if latent_flow_data is None else self.latent_flow_data,
             # current_end=self.kv_cache_ends,
         )
         #torch.cuda.synchronize(device=self.device)
-        generator_end_time= time.time()
+        # generator_end_time= time.time()
         # print(f"Generator time: {generator_end_time - inference_stream_start_time} seconds")
 
         for i in range(len(self.denoising_step_list) - 1):
@@ -353,7 +363,7 @@ class CausalStreamInferencePipeline(torch.nn.Module):
                             dtype=torch.long)
             )
         #torch.cuda.synchronize(device=self.device)
-        add_noise_end_time= time.time()
+        # add_noise_end_time= time.time()
         # print(f"Add noise time: {add_noise_end_time - generator_end_time} seconds")
 
         # print(self.kv_cache_starts)

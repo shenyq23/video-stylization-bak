@@ -4,11 +4,13 @@ from causvid.models.model_interface import (
     VAEInterface
 )
 from causvid.models.wan.wan_base.modules.tokenizers import HuggingfaceTokenizer
-from causvid.models.wan.wan_base.modules.model import WanModel
 from causvid.models.wan.wan_base.modules.vae import _video_vae
 from causvid.models.wan.wan_base.modules.t5 import umt5_xxl
 from causvid.models.wan.flow_match import FlowMatchScheduler
+
+from causvid.models.wan.wan_base.modules.model import WanModel
 from causvid.models.wan.causal_model import CausalWanModel
+
 from typing import List, Tuple, Dict, Optional
 import torch
 import os
@@ -16,7 +18,6 @@ import torch.distributed as dist
 import time
 
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-
 
 class WanTextEncoder(TextEncoderInterface):
     def __init__(self, model_type="T2V-1.3B") -> None:
@@ -26,12 +27,13 @@ class WanTextEncoder(TextEncoderInterface):
             encoder_only=True,
             return_tokenizer=False,
             dtype=torch.float32,
-            device=torch.device('cpu')
+            device=torch.device('meta')
         ).eval().requires_grad_(False)
+
         self.text_encoder.load_state_dict(
-            torch.load(os.path.join(repo_root,f"wan_models/Wan2.1-{model_type}/models_t5_umt5-xxl-enc-bf16.pth"),
-                       map_location='cpu', weights_only=False)
-        )
+            torch.load(os.path.join(repo_root, "wan_models/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth"),
+                       map_location='cpu', weights_only=False, mmap=True),
+        assign=True)
 
         self.tokenizer = HuggingfaceTokenizer(
             name=os.path.join(repo_root, "wan_models/Wan2.1-T2V-1.3B/google/umt5-xxl/"), seq_len=512, clean='whitespace')
@@ -72,7 +74,7 @@ class WanVAEWrapper(VAEInterface):
 
         # init model
         self.model = _video_vae(
-            pretrained_path=os.path.join(repo_root,f"wan_models/Wan2.1-{model_type}/Wan2.1_VAE.pth"),
+            pretrained_path=os.path.join(repo_root, "wan_models/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth"),
             z_dim=16,
         ).eval().requires_grad_(False)
 
@@ -111,22 +113,22 @@ class WanVAEWrapper(VAEInterface):
         # output = output.permute(0, 2, 1, 3, 4)
         return output
 
-    def stream_encode(self, video: torch.Tensor, is_scale=True) -> torch.Tensor:
-        if is_scale:
-            device, dtype = video.device, video.dtype
-            scale = [self.mean.to(device=device, dtype=dtype),
-                    1.0 / self.std.to(device=device, dtype=dtype)]
-        else:
-            scale = None
-        return self.model.stream_encode(video, scale)
+    def stream_encode(self, video: torch.Tensor, mask: torch.Tensor, flow: torch.Tensor, is_nocache: bool) -> torch.Tensor:
+        device, dtype = video.device, video.dtype
+        scale = [self.mean.to(device=device, dtype=dtype),
+                1.0 / self.std.to(device=device, dtype=dtype)]
 
-    def stream_decode_to_pixel(self, latent: torch.Tensor) -> torch.Tensor:
+        return self.model.stream_encode(video, scale, mask, flow, is_nocache=is_nocache)
+
+    def stream_decode_to_pixel(self, latent: torch.Tensor, mask: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
         zs = latent.permute(0, 2, 1, 3, 4)
-        zs = zs.to(torch.bfloat16).to(latent.device)
+        # zs = zs.to(torch.bfloat16).to('cuda')
+        zs = zs.to(torch.float16).to('cuda')
+
         device, dtype = latent.device, latent.dtype
         scale = [self.mean.to(device=device, dtype=dtype),
                  1.0 / self.std.to(device=device, dtype=dtype)]
-        output = self.model.stream_decode(zs, scale).float().clamp_(-1, 1)
+        output = self.model.stream_decode(zs, scale, mask, flow).float().clamp_(-1, 1)
         output = output.permute(0, 2, 1, 3, 4)
         return output
 
@@ -134,9 +136,8 @@ class WanVAEWrapper(VAEInterface):
 class WanDiffusionWrapper(DiffusionModelInterface):
     def __init__(self, model_type="T2V-1.3B"):
         super().__init__()
-
-        self.model = WanModel.from_pretrained(os.path.join(repo_root,f"wan_models/Wan2.1-{model_type}/"))
-        self.model.eval()
+        # self.model = WanModel.from_pretrained(os.path.join(repo_root, "wan_models/Wan2.1-T2V-1.3B/"))
+        # self.model.eval()
 
         self.uniform_timestep = True
 
@@ -324,8 +325,9 @@ class CausalWanDiffusionWrapper(WanDiffusionWrapper):
     def __init__(self, model_type="T2V-1.3B"):
         super().__init__()
 
-        self.model = CausalWanModel.from_pretrained(os.path.join(repo_root,
-            f"wan_models/Wan2.1-{model_type}/"))
+        self.model = CausalWanModel.from_pretrained(
+            os.path.join(repo_root, "wan_models/Wan2.1-T2V-1.3B/"))
+
         self.model.eval()
 
         self.uniform_timestep = False
