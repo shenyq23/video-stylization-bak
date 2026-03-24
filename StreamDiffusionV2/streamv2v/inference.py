@@ -29,6 +29,7 @@ specified generation FPS (--fps_generate), mimicking a live input source like a 
 import sys
 sys.path.append("../")
 sys.path.append("../deps/gmflow")
+sys.path.append("../StreamDiffusionV2")
 
 from causvid.models.wan.causal_stream_inference import CausalStreamInferencePipeline
 from causvid.models.wan.wan_base.modules import TAEHV, StreamingTAEHV
@@ -145,7 +146,7 @@ class TAEHVDiffusersWrapper(torch.nn.Module):
 
 
 def build_taehv_vae(device: torch.device, dtype: torch.dtype = torch.float16) -> TAEHVDiffusersWrapper:
-    taehv_checkpoint_path = "causvid/models/wan/wan_base/modules/taew2_1.pth"
+    taehv_checkpoint_path = os.path.join("./wan_models", "taew2_1.pth")
     if not os.path.exists(taehv_checkpoint_path):
         logger = logging.getLogger("TAEHV")
         logger.info("taew2_1.pth not found at %s, downloading...", taehv_checkpoint_path)
@@ -162,13 +163,63 @@ def build_taehv_vae(device: torch.device, dtype: torch.dtype = torch.float16) ->
 from gmflow.geometry import flow_warp as universal_flow_warp
 import json
 
+import torch
+import torch.nn.functional as F
+
+def normalize_map(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    # x: [B,1,H,W]
+    x_min = x.amin(dim=(2, 3), keepdim=True)
+    x_max = x.amax(dim=(2, 3), keepdim=True)
+    return (x - x_min) / (x_max - x_min + eps)
+
+def box_blur_map(x: torch.Tensor, kernel_size: int = 11) -> torch.Tensor:
+    pad = kernel_size // 2
+    return F.avg_pool2d(x, kernel_size=kernel_size, stride=1, padding=pad)
+
+def fuse_occ_maps(
+    occ_geom: torch.Tensor,      # [B,1,H,W], warp error / geometry occ
+    occ_motion: torch.Tensor,    # [B,1,H,W], relative motion magnitude
+    gamma: float = 0.6,          # soften geometry gate
+    alpha: float = 0.7,          # weight of local diffusion
+    blur_ks: int = 11,
+    motion_power: float = 1.2,   # sharpen motion peak slightly
+    gate_floor: float = 0.3,     # keep some softness after blur
+    eps: float = 1e-6,
+) -> torch.Tensor:
+
+    occ_geom_n = normalize_map(occ_geom, eps=eps)
+    occ_motion_n = normalize_map(occ_motion, eps=eps)
+
+    # 1) foreground soft gate: constrain to bird interior but not too harsh
+    soft_gate = occ_geom_n.clamp_min(0.0).pow(gamma)
+
+    # 2) sharpen motion peak slightly so head stands out more
+    motion_peak = occ_motion_n.clamp_min(0.0).pow(motion_power)
+
+    # 3) seed = strong motion inside foreground
+    seed = soft_gate * motion_peak
+
+    # 4) local diffusion -> make region connected
+    seed_blur = box_blur_map(seed, kernel_size=blur_ks)
+
+    # 5) combine point evidence + connected support
+    fused = (1.0 - alpha) * seed + alpha * seed_blur
+
+    # 6) gate again to prevent blur leaking to background
+    fused = fused * (gate_floor + (1.0 - gate_floor) * soft_gate)
+
+    # 7) optional final normalization for stable top-k behavior
+    fused = normalize_map(fused, eps=eps)
+
+    return fused
+
 class OpticalFlowCalculator:
     def __init__(self,
                  flow_model_type: str,
                  device: torch.device,
                  x265_params: dict = None,
                  occlusion_method: str = 'quantile',
-                 top_k_percentage: float = 0.1,
+                 top_k_percentage: float=(0.1,0.1),
                  morph_kernel_size: int = 7,
                  conn_comp_threshold_quantile: float = 0.75
                 ):
@@ -203,6 +254,11 @@ class OpticalFlowCalculator:
              self.logger.info("Using 'geometry' occlusion for DL models.")
              self.occlusion_computer = OcclusionComputation(use_geometry=True)
 
+        self.bwd_occ_avg=None
+        # from ultralytics import YOLO
+        # self.seg_model = YOLO("yolo26n-seg.pt")
+        # self.seg_model.to(device)
+
     def compute_binary_occlusion_mask(self, raw_occ_map: torch.Tensor) -> torch.Tensor:
         B, _, H, W = raw_occ_map.shape
         final_masks = []
@@ -210,12 +266,12 @@ class OpticalFlowCalculator:
         for i in range(B):
             single_occ_map = raw_occ_map[i, 0]
 
-            if self.occlusion_method == 'exact':
+            if self.occlusion_method in ['exact','gather_block']:
                 num_elements = single_occ_map.numel()
-                k = int(num_elements * self.top_k_percentage)
+                k = int(num_elements * self.top_k_percentage[1])
 
                 # 确保 k 至少为 1 (如果百分比 > 0)，且不超过总元素数
-                k = max(1, min(k, num_elements)) if self.top_k_percentage > 0 else 0
+                k = max(1, min(k, num_elements)) if self.top_k_percentage[1] > 0 else 0
 
                 if k == 0:
                     binary_mask = torch.zeros_like(single_occ_map, dtype=torch.bool)
@@ -232,10 +288,10 @@ class OpticalFlowCalculator:
                     binary_mask = binary_mask_flat.view(H, W)
 
             elif self.occlusion_method == 'quantile':
-                threshold = torch.quantile(single_occ_map, 1.0 - self.top_k_percentage)
+                threshold = torch.quantile(single_occ_map, 1.0 - self.top_k_percentage[1])
                 binary_mask = (single_occ_map >= threshold)
             elif self.occlusion_method == 'morphological':
-                initial_quantile = max(0.5, 1.0 - self.top_k_percentage * 2)
+                initial_quantile = max(0.5, 1.0 - self.top_k_percentage[1] * 2)
                 threshold = torch.quantile(single_occ_map, initial_quantile)
                 noisy_mask_np = (single_occ_map > threshold).cpu().numpy().astype(np.uint8)
                 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.morph_kernel_size, self.morph_kernel_size))
@@ -261,7 +317,7 @@ class OpticalFlowCalculator:
 
                 region_scores.sort(key=lambda x: x['score'], reverse=True)
                 final_mask_np = np.zeros((H, W), dtype=bool)
-                target_area = H * W * self.top_k_percentage
+                target_area = H * W * self.top_k_percentage[1]
                 covered_area = 0
                 for region in region_scores:
                     if covered_area >= target_area: break
@@ -271,39 +327,98 @@ class OpticalFlowCalculator:
 
                 binary_mask = torch.from_numpy(final_mask_np).to(self.device)
             elif self.occlusion_method == "gather_block":
-                raise RuntimeError(
-                    "gather_block uses raw residual map directly and should not call compute_binary_occlusion_mask()."
-                )
+                binary_mask=single_occ_map.to(torch.float32).contiguous()
+                # raise RuntimeError(
+                #     "gather_block uses raw residual map directly and should not call compute_binary_occlusion_mask()."
+                # )
             else:
                 raise ValueError(f"Unsupported occlusion method: {self.occlusion_method}")
 
             final_masks.append(binary_mask)
 
         return torch.stack(final_masks, dim=0).unsqueeze(1)
+    
+    def get_foreground_mask(self, frame_tensor: torch.Tensor) -> torch.Tensor:
+        """
+        输入: [1, 3, H, W] 范围 [-1, 1] 的张量
+        输出: [1, 1, H, W] 范围 [0, 1] 的二值掩码
+        """
+        # 1. 预处理：将 [-1, 1] 转为 YOLO 需要的 [0, 255] uint8 或 [0, 1] float
+        img_for_seg = (frame_tensor * 0.5 + 0.5).clamp(0, 1)
+        
+        # 2. 推理：设置 imgsz 减小分辨率可以进一步提速 (例如 320 或 640)
+        # conf=0.25 过滤低置信度，classes=[14] 如果只想锁定“鸟”(COCO中鸟是14)
+        # 如果想锁定所有移动物体，可以不设 classes
+        results = self.seg_model.predict(img_for_seg, conf=0.25, verbose=True)
+        
+        _, _, H, W = frame_tensor.shape
+        mask_out = torch.zeros((1, 1, H, W), device=self.device)
 
+        if results[0].masks is not None:
+            # 合并当前帧所有检测到的物体掩码
+            # results[0].masks.data 是 [N, H, W]
+            combined_mask = torch.any(results[0].masks.data, dim=0).float()
+            # 缩放到原始尺寸 (YOLO 内部可能会 resize)
+            mask_out = F.interpolate(combined_mask.unsqueeze(0).unsqueeze(0), 
+                                     size=(H, W), mode='nearest')
+        
+        return mask_out
 
-    def calculate_flow(self, ref_frame: torch.Tensor, current_frame: torch.Tensor, top_k_percentage: float) -> tuple | None:
+    def calculate_flow(self, ref_frame: torch.Tensor, current_frame: torch.Tensor) -> tuple | None:
         if self.model is None: return None
 
         if (self.flow_model_type == "x265"):
             # print(self.x265_params)
             fwd_flow, bwd_flow = self.model.compute_flow_from_tensors(ref_frame, current_frame, **self.x265_params)
+            # print(bwd_flow.shape)
+            # fwd_flow=torch.ones((1,2,480,832),dtype=torch.float32,device=ref_frame.device)
+            # bwd_flow=torch.ones((1,2,480,832),dtype=torch.float32,device=ref_frame.device)
+
         else:
             fwd_flow, bwd_flow = self.model.compute_flow_from_tensors(ref_frame, current_frame)
 
-        fwd_occ, bwd_occ = self.occlusion_computer(ref_frame, current_frame, fwd_flow, bwd_flow)
+        ####修改1. 把occ改成flow的模长
+        
+        _, bwd_occ_geom = self.occlusion_computer(ref_frame, current_frame, fwd_flow, bwd_flow)
+        if bwd_occ_geom.dim() == 3:
+            bwd_occ_geom = bwd_occ_geom.unsqueeze(1)
 
-        if bwd_occ.dim() == 3:
-            bwd_occ = bwd_occ.unsqueeze(1)
-            fwd_occ = fwd_occ.unsqueeze(1)
+        # 方法2: 相对运动模长图 (优点: 强度精确，高亮主要运动)
+        # 我将其重命名为 bwd_occ_motion
+        global_motion = bwd_flow.mean(dim=(2, 3), keepdim=True)
+        relative_flow = bwd_flow - global_motion
+        bwd_occ_motion = torch.norm(relative_flow, p=2, dim=1, keepdim=True)
 
-        if self.occlusion_method == "gather_block":
-            bwd_mask = bwd_occ[0, 0].to(torch.float32).contiguous()
+        bwd_occ = 0*bwd_occ_geom+1*bwd_occ_motion
+
+        # # bwd_occ = fuse_occ_maps(
+        # #     occ_geom=bwd_occ_geom,
+        # #     occ_motion=bwd_occ_motion,
+        # #     gamma=0.6,
+        # #     alpha=0.7,
+        # #     blur_ks=11,
+        # #     motion_power=1.2,
+        # #     gate_floor=0.3,
+        # # )
+        # # torch.cuda.synchronize(ref_frame.device)
+        # # start=time.time()
+        # foreground_mask = self.get_foreground_mask(current_frame)
+        # bwd_occ = bwd_occ * foreground_mask
+        # # torch.cuda.synchronize(ref_frame.device)
+        # # end=time.time()
+        # # print(f"Segmentation and fusion took {end-start:.3f} seconds")
+
+        if (self.bwd_occ_avg==None):
+            self.bwd_occ_avg=bwd_occ
         else:
-            bwd_mask = self.compute_binary_occlusion_mask(bwd_occ)[0, 0]
+            self.bwd_occ_avg=0.5*self.bwd_occ_avg+0.5*bwd_occ
+        return bwd_flow,self.bwd_occ_avg
 
-        bwd_flow_hw2 = bwd_flow[0].permute(1, 2, 0).contiguous().to(dtype=torch.float32)
-        return bwd_flow_hw2, bwd_mask
+        # 
+
+        # 最终的 bwd_occ 是一个浮点分布图，它结合了两种方法的优点
+        # 后续的 compute_binary_occlusion_mask 会从这个更优的分布中选取 top_k_percentage
+        return bwd_flow, bwd_occ
 
 def tensor_to_np_img(tensor: torch.Tensor) -> np.ndarray:
     """Converts a [-1, 1] or [0, 1] image tensor to a [0, 255] uint8 RGB numpy array."""
@@ -578,7 +693,7 @@ class ParallelInferenceOrchestrator:
                        flow_calculator: OpticalFlowCalculator,
                        num_chunks: int, chunk_size: int, noise_scale: float,
                        num_steps: int, fps_generate: int, mask_dilate: int, min_res: tuple[int, int],
-                       occlusion_method: str, top_k_percentage: float, is_nocache: bool):
+                       occlusion_method: str, top_k_percentage: dict, is_nocache: bool):
         self.logger.info("Producer thread started.")
 
         # torch.cuda.synchronize(device=self.device)
@@ -649,20 +764,21 @@ class ParallelInferenceOrchestrator:
                     ref_frame_tensor = input_video_original[:, :, ref_frame_idx].to(self.device, torch.float32)
                     cur_frame_tensor = input_video_original[:, :, cur_frame_idx].to(self.device, torch.float32)
 
-                    flow_data = flow_calculator.calculate_flow(ref_frame_tensor, cur_frame_tensor, top_k_percentage)
+                    flow_data = flow_calculator.calculate_flow(ref_frame_tensor, cur_frame_tensor)
                     bwd_flow, bwd_occ = flow_data
 
+                    # print(latents.shape,bwd_flow.shape,bwd_occ.shape)
+                
                     if occlusion_method == "gather_block":
-                        masks_enc = build_gather_block_masks(bwd_occ, top_k_percentage)
+                        masks_enc = build_gather_block_masks(bwd_occ.squeeze(0).squeeze(0), top_k_percentage=top_k_percentage[0])
                     else:
                         # Encoder masks
-                        mask_enc = dilate_mask(bwd_occ, int(mask_dilate))
+                        mask_enc = dilate_mask(bwd_occ.squeeze(0).squeeze(0), int(mask_dilate))
                         masks_enc = downsample_mask(
                             mask_enc,
                             min_res=tuple(min_res),
                             dilation=int(mask_dilate),
                         )
-
                     ref_frame_idx = cur_frame_idx
 
                     # start_event = torch.cuda.Event(enable_timing=True)
@@ -670,8 +786,8 @@ class ParallelInferenceOrchestrator:
                     # torch.cuda.synchronize()  # 保证前面操作完成
                     # start_event.record()
 
-                    latents = self._stream_encode(inp, mask=masks_enc, flow=bwd_flow, is_nocache=is_nocache)
-
+                    latents = self._stream_encode(inp, mask=masks_enc, flow=bwd_flow.squeeze(0).permute(1, 2, 0).contiguous(),is_nocache=is_nocache)
+                    
                     # end_event.record()
                     # torch.cuda.synchronize()
                     # elapsed_time_ms = start_event.elapsed_time(end_event)
@@ -684,13 +800,53 @@ class ParallelInferenceOrchestrator:
                     )
                     noise = torch.randn_like(latents)
                     noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
+
+
+
+                    latent_h, latent_w=latents.shape[-2:]
+                    target_h=latent_h
+                    target_w=latent_w
+                    downsampled_flow = F.interpolate(bwd_flow, size=(target_h, target_w), mode='bilinear', align_corners=False)
+                    downsampled_flow *= (float(target_h) / bwd_flow.shape[2])
+                    downsampled_occ= F.interpolate(bwd_occ, size=(target_h, target_w), mode='bilinear', align_corners=False)
+                    latent_binary_mask = flow_calculator.compute_binary_occlusion_mask(downsampled_occ)
+
+                    downsampled_occ_half= F.interpolate(bwd_occ, size=(target_h//2, target_w//2), mode='bilinear', align_corners=False)
+                    latent_binary_mask_half = flow_calculator.compute_binary_occlusion_mask(downsampled_occ_half)
+                    flow_data= (downsampled_flow,latent_binary_mask,latent_binary_mask_half)
+
+                    # if (flow_data!=None): 
+                    #     warped_frame = universal_flow_warp(ref_frame_tensor, bwd_flow)
+                    #     viz_frame_n = tensor_to_np_img(ref_frame_tensor)
+                    #     viz_frame_n1 = tensor_to_np_img(cur_frame_tensor)
+                    #     viz_warped_frame = tensor_to_np_img(warped_frame)
+                    #     viz_frame_flow = visualize_flow_to_rgb(bwd_flow, vector_stride=20)
+                    #     viz_frame_compo=visualize_flow_with_source_overlay(viz_frame_n, viz_frame_n1, viz_frame_flow, alpha=0.4)
+
+                    #     occ_latent=latents.squeeze(1)
+                    #     viz_latent=visualize_latent_to_image(occ_latent)
+                    #     latent_binary_mask_sq=latent_binary_mask.squeeze(0).squeeze(0).unsqueeze(-1).expand(-1,-1,3)
+                    #     green_bgr=torch.tensor([0,255,0], device=latent_binary_mask_sq.device).view(1,1,3).expand_as(latent_binary_mask_sq)
+                    #     viz_occ_latent=torch.where(latent_binary_mask_sq,green_bgr,torch.from_numpy(viz_latent).to(latent_binary_mask_sq.device))
+                    #     viz_occ_latent=viz_occ_latent.cpu().numpy().astype(np.uint8)
+
+                    #     pixel_row = np.concatenate([viz_frame_n, viz_frame_n1, viz_warped_frame, viz_frame_compo], axis=1)
+                    #     final_image= pixel_row
+                    #     save_path = os.path.join("./outputs/warped", f"comparison_chunk_{chunk_id:04d}.png")
+                    #     cv2.imwrite(save_path, cv2.cvtColor(final_image, cv2.COLOR_RGB2BGR))
+
+                    #     latent_row=np.concatenate([viz_occ_latent,viz_latent], axis=1)
+                    #     save_path = os.path.join("./outputs/warped", f"comparison_latent_{chunk_id:04d}.png")
+                    #     cv2.imwrite(save_path, latent_row)
+
+
                 else:
                     noisy_latents = torch.randn(1, self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.float16)
                     current_step = None
 
                 prod_end_event.record()
                 self.data_queue.put((noisy_latents, current_step, flow_data, prod_end_event, chunk_id))
-
+                
                 if chunk_id <= num_chunks:
                     self.logger.info(f"Producer: Real data chunk {chunk_id}/{num_chunks} placed in queue. ")
                     self.logger.info(f"Queue len: {self.data_queue.qsize()}")
@@ -755,7 +911,7 @@ class ParallelInferenceOrchestrator:
         mask_dilate: int,
         min_res: tuple[int, int],
         occlusion_method: str,
-        top_k_percentage: float,
+        top_k_percentage: int,
         # profile_consumer: bool = False,
         is_nocache: bool,
     ):
@@ -816,7 +972,6 @@ class ParallelInferenceOrchestrator:
                 video = self._stream_decode_to_pixel(denoised_pred, None, None)
                 if video is None:
                     raise RuntimeError("Streaming VAE decoder produced no frames for the initial block.")
-
                 video = (video * 0.5 + 0.5).clamp(0, 1)
                 video = video[0].permute(0, 2, 3, 1).contiguous()
                 self.save_queue.put((video.to('cpu', non_blocking=False), save_results))
@@ -832,7 +987,6 @@ class ParallelInferenceOrchestrator:
             # torch.cuda.synchronize(device=self.device)
             # mem_run_end = torch.cuda.memory_reserved(device=self.device)
             # print("GPU memory used by consumer during run(): ", (mem_run_end - mem_run_start)/1024/1024/1024, "GB","from",mem_run_start/1024/1024/1024,"GB to",mem_run_end/1024/1024/1024,"GB")
-
             # --- 4. Process "Hot Loop" data from the queue ---
             last_save_time = time.time() # Initialize timer for first iteration
             while self.processed < num_chunks + num_steps - 1:
@@ -856,17 +1010,17 @@ class ParallelInferenceOrchestrator:
                         current_start=current_start,
                         current_end=current_end,
                         current_step=current_step,
-                        # latent_flow_data=flow_data,
-                        latent_flow_data=None,
+                        latent_flow_data=flow_data,
+                        # latent_flow_data=None,
                     )
 
                     video_out = None
                     if self.processed + 1 >= num_steps:
                         # Decoder sparse only at low resolutions; build masks once per chunk.
                         if flow_data is not None:
-                            bwd_flow, bwd_occ = flow_data
+                            bwd_flow, bwd_occ,_ = flow_data
                             if occlusion_method == "gather_block":
-                                masks_dec = build_gather_block_masks(bwd_occ, top_k_percentage)
+                                masks_dec = build_gather_block_masks(bwd_occ, top_k_percentage[0])
                             else:
                                 # Encoder masks
                                 mask_dec = dilate_mask(bwd_occ, int(mask_dilate))
@@ -875,14 +1029,12 @@ class ParallelInferenceOrchestrator:
                                     min_res=tuple(min_res),
                                     dilation=int(mask_dilate),
                                 )
-
                         # start_event = torch.cuda.Event(enable_timing=True)
                         # end_event = torch.cuda.Event(enable_timing=True)
                         # torch.cuda.synchronize()  # 保证前面操作完成
                         # start_event.record()
 
                         video_out = self._stream_decode_to_pixel(denoised_pred[[-1]], mask=None, flow=None)
-
                         # end_event.record()
                         # torch.cuda.synchronize()
                         # elapsed_time_ms = start_event.elapsed_time(end_event)
@@ -895,7 +1047,6 @@ class ParallelInferenceOrchestrator:
                         # f"feat_map={format_bytes(feat_map_nbytes(self.pipeline_manager.vae_encoder.model))} "
                         f"scatter_total={format_bytes(scatter_cache_nbytes(scatter_cache_modules))}"
                     )
-
                     if video_out is not None:
                         video = (video_out * 0.5 + 0.5).clamp(0, 1)
                         video = video[0].permute(0, 2, 3, 1).contiguous()
@@ -938,16 +1089,16 @@ class ParallelInferenceOrchestrator:
 
             # --- NEW: Final FPS calculation based on actual iteration times ---
             if iteration_times:
-                avg_iter_time = np.mean(iteration_times[1:])  # Modification: Skip the first iteration
+                avg_iter_time = np.mean(iteration_times[1:])  # Modification: Skip the first iteration 
                 avg_fps = chunk_size / avg_iter_time
                 self.logger.info(f"Average End-to-End FPS (Consumer-side, after pipeline fill): {avg_fps:.4f}")
-
+                
             self.logger.info(f"Final video shape: {video.shape}")
-
-            output_path = os.path.join(output_folder, f"output_{occlusion_method}_{top_k_percentage}_steps_{num_steps}.mp4")
+            
+            output_path = os.path.join(output_folder, f"output_{occlusion_method}_vae_{top_k_percentage[0]}_dit_{top_k_percentage[1]}_steps_{num_steps}.mp4")
 
             export_to_video(video, output_path, fps=fps)
-
+            
             self.logger.info(f"Video saved to: {output_path}")
             self.logger.info("Parallel inference with timing completed.")
 
@@ -975,9 +1126,12 @@ def main():
     )
     parser.add_argument("--max_frames", type=int, default=None, help="Video length (number of frames)")
     parser.add_argument("--flow_model", type=str, default="x265", choices=["gmflow", "raft", "x265", "none"], help="Optical flow model to use (from calflow). If None, flow is not calculated.")
-    parser.add_argument("--x265_params", type=str, default='{"stage":"lookahead", "log-level":"none"}', help="x265 parameters as a JSON string. e.g., '{\"stage\": \"lookahead\"}'")
-    parser.add_argument("--occlusion_method", type=str, default="quantile", choices=["quantile", "morphological", "connected_components", "gather_block"], help="Method to generate occlusion mask.")
-    parser.add_argument("--top_k_percentage", type=float, default=0.1, help="Top percentage of occlusion values to consider as masked.")
+    parser.add_argument("--x265_params", type=str, default='{"stage":"encode", "quiet":true}', help="x265 parameters as a JSON string. e.g., '{\"stage\": \"lookahead\"}'")
+    parser.add_argument("--occlusion_method", type=str, default="quantile", choices=["exact","quantile", "morphological", "connected_components", "gather_block"], help="Method to generate occlusion mask.")
+    
+    parser.add_argument("--vae_ratio", type=float, default=0.1, help="Top percentage of occlusion values to consider as masked.")
+    parser.add_argument("--dit_ratio", type=float, default=0.1, help="Top percentage of occlusion values to consider as masked.")
+
     parser.add_argument("--use_cached_text_embedding", action="store_true", help="If set, load pre-computed text embeddings from 'cached_text_embedding.pt' instead of initializing the text encoder.")
     parser.add_argument("--morph_kernel_size", type=int, default=7, help="Kernel size for morphological opening operation.")
     parser.add_argument("--mask_dilate", type=int, default=6, help="Dilation (pixels) applied to the base update mask before downsample_mask().")
@@ -994,6 +1148,7 @@ def main():
             "Larger resolutions will run full compute without decoder scatter cache."
         ),
     )
+
     def _kernel_backend(v: str) -> str:
         v = (v or "").strip().lower()
         if v in {"pytorch", "torch"}:
@@ -1008,7 +1163,6 @@ def main():
         default="cuda",
         help="SIGE gather/scatter kernel backend: PyTorch (default) or CUDA.",
     )
-
     args = parser.parse_args()
     set_seed(args.seed)
 
@@ -1017,7 +1171,7 @@ def main():
     torch.set_grad_enabled(False)
 
     os.makedirs(args.output_folder, exist_ok=True)
-    log_file = os.path.join(args.output_folder, f"{args.occlusion_method}_{args.top_k_percentage}_run.log")
+    log_file = os.path.join(args.output_folder, f"{args.occlusion_method}_{args.vae_ratio}_{args.dit_ratio}_run.log")
     handlers = [
         logging.StreamHandler(sys.stdout),
         logging.FileHandler(log_file, mode="w", encoding="utf-8"),
@@ -1031,10 +1185,27 @@ def main():
         handlers=handlers,
     )
 
+    log_file = os.path.join(args.output_folder, f"{args.occlusion_method}__{args.vae_ratio}_{args.dit_ratio}_run.log")
+    handlers = [
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(log_file, mode="w", encoding="utf-8"),
+    ]
+    # global LOG_HANDLERS
+    # LOG_HANDLERS = handlers
+    # logging.basicConfig(
+    #     level=logging.INFO,
+    #     format=LOG_FORMAT,
+    #     datefmt=LOG_DATEFMT,
+    #     handlers=handlers,
+    # )
+    
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     flow_calculator = None
 
+    ratio_list=(args.vae_ratio,args.dit_ratio)
+
     if args.video_path is not None:
+        ALIGNMENT = 32
         ALIGNMENT = 32
         new_height = (args.height // ALIGNMENT) * ALIGNMENT
         new_width = (args.width // ALIGNMENT) * ALIGNMENT
@@ -1060,7 +1231,7 @@ def main():
                 device=device,
                 x265_params=x265_params,
                 occlusion_method=args.occlusion_method,
-                top_k_percentage=args.top_k_percentage,
+                top_k_percentage=ratio_list,
                 # morph_kernel_size=args.morph_kernel_size,
                 # conn_comp_threshold_quantile=args.conn_comp_thresh
             )
@@ -1107,9 +1278,9 @@ def main():
             args.mask_dilate,
             args.min_res,
             args.occlusion_method,
-            args.top_k_percentage,
+            top_k_percentage=ratio_list,
             # args.profile_consumer,
-            args.is_nocache,
+            is_nocache=args.is_nocache,
         )
     except Exception as e:
         logging.error(f"Error occurred during inference: {e}", exc_info=True)
@@ -1118,6 +1289,6 @@ def main():
 if __name__ == "__main__":
     torch.cuda.reset_peak_memory_stats()
     main()
-    peak_mem = torch.cuda.max_memory_allocated()
+    peak_mem = torch.cuda.max_memory_reserved()
 
     print(f"Peak GPU memory: {peak_mem / 1024**3:.2f} GB")

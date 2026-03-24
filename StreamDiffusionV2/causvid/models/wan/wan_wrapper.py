@@ -18,6 +18,25 @@ import torch.distributed as dist
 import time
 
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+# repo_root = "/media/cephfs/video/VideoUsers/thu2025/zhurui11/StreamDiffusionV2"
+
+import numpy as np
+import cv2
+
+def visualize_latent_to_image(latent: torch.Tensor) -> np.ndarray:
+    """Visualizes a latent tensor by taking the mean across channels and normalizing."""
+    if latent.dim() == 4:
+        latent = latent.squeeze(0)
+
+    latent_mean = latent.mean(dim=0)
+    min_val, max_val = latent_mean.min(), latent_mean.max()
+    if max_val > min_val:
+        latent_norm = (latent_mean - min_val) / (max_val - min_val)
+    else:
+        latent_norm = torch.zeros_like(latent_mean)
+
+    img_np = (latent_norm.float().cpu().numpy() * 255).astype(np.uint8)
+    return cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
 
 class WanTextEncoder(TextEncoderInterface):
     def __init__(self, model_type="T2V-1.3B") -> None:
@@ -29,7 +48,7 @@ class WanTextEncoder(TextEncoderInterface):
             dtype=torch.float32,
             device=torch.device('meta')
         ).eval().requires_grad_(False)
-
+        
         self.text_encoder.load_state_dict(
             torch.load(os.path.join(repo_root, "wan_models/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth"),
                        map_location='cpu', weights_only=False, mmap=True),
@@ -332,6 +351,8 @@ class CausalWanDiffusionWrapper(WanDiffusionWrapper):
 
         self.uniform_timestep = False
 
+        self.flow_guidance_cache=None
+
     # Overwrite the forward method to accept new arguments
     def forward(
         self, noisy_image_or_video: torch.Tensor, conditional_dict: dict,
@@ -340,7 +361,6 @@ class CausalWanDiffusionWrapper(WanDiffusionWrapper):
         current_start: Optional[int] = None,
         current_end: Optional[int] = None,
         # ==================== NEW CODE START ====================
-        flow_guidance_cache = None,
         latent_flow_data = None
         # ===================== NEW CODE END =====================
     ) -> torch.Tensor:
@@ -362,7 +382,6 @@ class CausalWanDiffusionWrapper(WanDiffusionWrapper):
                 current_start=current_start,
                 current_end=current_end,
                 # ==================== NEW CODE START ====================
-                flow_guidance_cache=flow_guidance_cache,
                 latent_flow_data=latent_flow_data
                 # ===================== NEW CODE END =====================
             ).permute(0, 2, 1, 3, 4)
@@ -379,5 +398,35 @@ class CausalWanDiffusionWrapper(WanDiffusionWrapper):
             xt=noisy_image_or_video.flatten(0, 1),
             timestep=timestep.flatten(0, 1)
         ).unflatten(0, flow_pred.shape[:2])
+
+        # print(pred_x0.shape)
+        # if (self.model.count>=5):
+        #     for i in range (4):
+        #         viz=visualize_latent_to_image(pred_x0[i])
+        #         cv2.imwrite(os.path.join(repo_root, f"outputs/debug_viz/pred_x0_{self.model.count}_{i}.png"), viz)
+        from gmflow.geometry import flow_warp as universal_flow_warp
+        use_sparse=(latent_flow_data!=None and self.flow_guidance_cache!=None) and False
+        x=pred_x0
+        if use_sparse:    
+            b, _, s, h, w = x.shape
+            x = x.squeeze(1)
+            flow = latent_flow_data["flow"]
+            occ_mask = latent_flow_data["mask"] 
+            x_prev = self.flow_guidance_cache
+            x_prev_image = x_prev.squeeze(1)
+            
+            x_warped = universal_flow_warp(x_prev_image.float(), flow.float()).to(dtype=x.dtype)
+            occ_mask_expanded = occ_mask.view(b, 1, h, w).expand(b, s, h, w)
+            x_final = torch.where(occ_mask_expanded, x, x_warped)
+            x_final = x_final.unsqueeze(1)
+            x = x.unsqueeze(1)
+            
+            # 注意：这里只将前 sparse_bs 个 chunk 替换为光流 warp 后的结果
+            x[:2] = x_final[:2]
+            
+        if latent_flow_data is not None: 
+            self.flow_guidance_cache = x
+
+        pred_x0=x
 
         return pred_x0

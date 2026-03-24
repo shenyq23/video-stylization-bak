@@ -26,3 +26,4 @@ test_3d_vae
 /StreamDiffusionV2/ckpts/
 /StreamDiffusionV2/wan_models/
 /StreamDiffusionV2/outputs/
+/sige3d/cuda_kernels/build/

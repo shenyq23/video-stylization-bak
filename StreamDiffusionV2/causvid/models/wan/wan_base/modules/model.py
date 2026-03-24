@@ -9,6 +9,13 @@ from diffusers.models.modeling_utils import ModelMixin
 
 from .attention import flash_attention
 
+try:
+    from flash_attn import flash_attn_interface
+    FLASH_ATTN_INTERFACE_AVAILABLE = True
+except ImportError:
+    FLASH_ATTN_INTERFACE_AVAILABLE = False
+# --- 结束新增 ---
+
 __all__ = ['WanModel']
 
 
@@ -158,19 +165,64 @@ class WanSelfAttention(nn.Module):
 
 class WanT2VCrossAttention(WanSelfAttention):
 
-    def forward(self, x, context, context_lens, crossattn_cache=None):
+    # def forward(self, x, context, context_lens, crossattn_cache=None):
+    #     r"""
+    #     Args:
+    #         x(Tensor): Shape [B, L1, C]
+    #         context(Tensor): Shape [B, L2, C]
+    #         context_lens(Tensor): Shape [B]
+    #         crossattn_cache (List[dict], *optional*): Contains the cached key and value tensors for context embedding.
+    #     """
+    #     b, n, d = x.size(0), self.num_heads, self.head_dim
+
+    #     # compute query, key, value
+    #     q = self.norm_q(self.q(x)).view(b, -1, n, d)
+
+    #     if crossattn_cache is not None:
+    #         if not crossattn_cache["is_init"]:
+    #             crossattn_cache["is_init"] = True
+    #             k = self.norm_k(self.k(context)).view(b, -1, n, d)
+    #             v = self.v(context).view(b, -1, n, d)
+    #             crossattn_cache["k"] = k
+    #             crossattn_cache["v"] = v
+    #         else:
+    #             k = crossattn_cache["k"]
+    #             v = crossattn_cache["v"]
+    #     else:
+    #         k = self.norm_k(self.k(context)).view(b, -1, n, d)
+    #         v = self.v(context).view(b, -1, n, d)
+
+    #     # ratio=int(0.1*q.shape[1])
+    #     # masked_q=q[:,:ratio,:,:]
+    #     # tmp_x=x.clone()
+    #     # print("in t2v",masked_q.shape,context_lens)
+    #     # x = flash_attention(masked_q, k, v, k_lens=context_lens)
+    #     # x=tmp_x.clone()
+
+
+    #     x = flash_attention(q, k, v, k_lens=context_lens)
+
+    #     # output
+    #     x = x.flatten(2)
+    #     x = self.o(x)
+    #     return x
+    
+    def forward(self, x, context, context_lens, crossattn_cache=None, pack=None):
         r"""
         Args:
-            x(Tensor): Shape [B, L1, C]
+            x(Tensor): 
+                - 标准模式: Shape [B, L1, C]
+                - 打包模式: Shape [total_tokens, C]
             context(Tensor): Shape [B, L2, C]
             context_lens(Tensor): Shape [B]
-            crossattn_cache (List[dict], *optional*): Contains the cached key and value tensors for context embedding.
+            crossattn_cache (dict, *optional*): 缓存的K,V。
+            pack (dict, *optional*): 包含打包格式信息的字典。如果提供，则启用打包模式。
         """
-        b, n, d = x.size(0), self.num_heads, self.head_dim
+        n, d = self.num_heads, self.head_dim
+        use_sparse = pack is not None and pack.get('use_sparse', False)
 
-        # compute query, key, value
-        q = self.norm_q(self.q(x)).view(b, -1, n, d)
-
+        # --- 计算 Key (k) 和 Value (v) ---
+        b = context.size(0)
         if crossattn_cache is not None:
             if not crossattn_cache["is_init"]:
                 crossattn_cache["is_init"] = True
@@ -184,21 +236,50 @@ class WanT2VCrossAttention(WanSelfAttention):
         else:
             k = self.norm_k(self.k(context)).view(b, -1, n, d)
             v = self.v(context).view(b, -1, n, d)
+        
+        if use_sparse:
+            # --- 打包模式 (Packed Mode) ---
+            total_tokens, _ = x.shape
+            q_packed = self.norm_q(self.q(x)).view(total_tokens, n, d)
 
-        # ratio=int(0.1*q.shape[1])
-        # masked_q=q[:,:ratio,:,:]
-        # tmp_x=x.clone()
-        # print("in t2v",masked_q.shape,context_lens)
-        # x = flash_attention(masked_q, k, v, k_lens=context_lens)
-        # x=tmp_x.clone()
+            # 展平 k 和 v
+            k_packed = k.view(-1, n, d)
+            v_packed = v.view(-1, n, d)
 
+            # if context_lens is None:
+            #     context_lens = torch.tensor([k.shape[1]] * b, device=k.device, dtype=torch.int32)
+            # cu_seqlens_k = torch.cat([context_lens.new_zeros([1]), context_lens.cumsum(0, dtype=torch.int32)])
+            # max_seqlen_q = pack['lengths'].max().item()
+            # max_seqlen_k = context_lens.max().item()
+            cu_seqlens_k=pack['cu_seqlens_ctx']
+            max_seqlen_q=pack['max_seqlen_q']
+            max_seqlen_k=pack['max_seqlen_ctx']
 
-        x = flash_attention(q, k, v, k_lens=context_lens)
+            # 调用 flash_attn_varlen_func (直接返回张量，不需要 [0])
+            attn_output = flash_attn_interface.flash_attn_varlen_func(
+                q=q_packed,
+                k=k_packed,
+                v=v_packed,
+                cu_seqlens_q=pack['cu_seqlens'],
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_q,
+                max_seqlen_k=max_seqlen_k,
+                causal=False, 
+            )
+            
+            attn_output = attn_output.flatten(1)
 
-        # output
-        x = x.flatten(2)
-        x = self.o(x)
-        return x
+        else:
+            # --- 标准模式 (Standard Batched Mode) ---
+            b_q, _, _ = x.shape
+            q = self.norm_q(self.q(x)).view(b_q, -1, n, d)
+
+            # 假设 flash_attention 是你外部封装好的函数
+            x_attn = flash_attention(q, k, v, k_lens=context_lens)
+            attn_output = x_attn.flatten(2)
+
+        output = self.o(attn_output)
+        return output
 
 
 class WanI2VCrossAttention(WanSelfAttention):
