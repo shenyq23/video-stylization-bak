@@ -205,6 +205,8 @@ class CausalStreamInferencePipeline(torch.nn.Module):
                 dtype=dtype,
                 device=device
             )
+            # self.flow_guidance_cache=None
+            # self.flow_guidance_cache=torch.zeros([self.num_transformer_blocks,len(self.denoising_step_list), self.frame_seq_length, self.num_heads*128], dtype=dtype, device=device)
         else:
             # reset cross attn cache
             for block_index in range(self.num_transformer_blocks):
@@ -245,6 +247,7 @@ class CausalStreamInferencePipeline(torch.nn.Module):
                     kv_cache=self.kv_cache1,
                     crossattn_cache=self.crossattn_cache,
                     current_start=current_start,
+                    latent_flow_data=None
                     # current_end=current_end
                 )
             # print(noise.shape,current_start)
@@ -295,9 +298,12 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         )
         self.latent_flow_data = {}
         self.latent_flow_data['flow']=torch.zeros(
-            (self.batch_size, 2, self.height//2,self.width//2), dtype= torch.float32, device=device
+            (self.batch_size, 2, self.height,self.width), dtype= torch.float32, device=device
         )
         self.latent_flow_data['mask']=torch.zeros(
+            (self.batch_size, 1, self.height,self.width), dtype= torch.bool, device=device
+        )
+        self.latent_flow_data['mask_half']=torch.zeros(
             (self.batch_size, 1, self.height//2,self.width//2), dtype= torch.bool, device=device
         )
 
@@ -327,12 +333,15 @@ class CausalStreamInferencePipeline(torch.nn.Module):
         self.kv_cache_starts[1:] = self.kv_cache_starts[:-1].clone()
         self.kv_cache_starts[0] = current_start
 
-        # if (latent_flow_data != None):
-        #     # print("test dtype",self.latent_flow_data['flow'].dtype,latent_flow_data[0].dtype,self.latent_flow_data['mask'].dtype,latent_flow_data[1].dtype)
-        #     self.latent_flow_data['flow'][1:] = self.latent_flow_data['flow'][:-1].clone()
-        #     self.latent_flow_data['flow'][0] = latent_flow_data[0].squeeze(0)
-        #     self.latent_flow_data['mask'][1:] = self.latent_flow_data['mask'][:-1].clone()
-        #     self.latent_flow_data['mask'][0] = latent_flow_data[1].squeeze(0)
+        if (latent_flow_data!=None):
+            # print("test dtype",self.latent_flow_data['flow'].dtype,latent_flow_data[0].dtype,self.latent_flow_data['mask'].dtype,latent_flow_data[1].dtype)
+            self.latent_flow_data['flow'][1:] = self.latent_flow_data['flow'][:-1].clone()
+            self.latent_flow_data['flow'][0] = latent_flow_data[0].squeeze(0)
+            self.latent_flow_data['mask'][1:] = self.latent_flow_data['mask'][:-1].clone()
+            self.latent_flow_data['mask'][0] = latent_flow_data[1].squeeze(0)
+            self.latent_flow_data['mask_half'][1:] = self.latent_flow_data['mask_half'][:-1].clone()
+            self.latent_flow_data['mask_half'][0] = latent_flow_data[2].squeeze(0)
+
 
         # #torch.cuda.synchronize(device=self.device)
         # clone_end_time= time.time()

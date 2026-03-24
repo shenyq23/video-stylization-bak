@@ -45,16 +45,56 @@ def visualize_latent_to_image(latent: torch.Tensor) -> np.ndarray:
 flex_attention = torch.compile(
     flex_attention, dynamic=False, mode="max-autotune")
 
-def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
+def causal_rope_apply(x, grid_sizes, freqs, start_frame=0,pack=None):
     """
     Vectorized/Parallel implementation of causal_rope_apply.
     """
-    # 计时器开始
-    # #torch.cuda.synchronize(x.device)
-    # start_rope_time = time.time()
-
     # 1. 获取维度信息
     # B=batch_size, S=sequence_length, N=num_heads, D=head_dim
+    use_sparse = False if pack==None else pack['use_sparse']
+    if use_sparse:
+        total_tokens, n_heads, d_head = x.shape
+        c = d_head // 2
+        B = pack['sparse_bs'] + pack['dense_bs']
+        
+        # 1. 和原来一样，构建完整的频率图
+        freqs_t, freqs_h, freqs_w = freqs.split([c - 2 * (c // 3), c // 3, c // 3], dim=1)
+        f, h, w = grid_sizes[0].tolist()
+        full_S = f * h * w
+
+        t_indices = torch.arange(f, device=x.device).view(1, f) + start_frame.view(B, 1)
+        causal_freqs_t = freqs_t[t_indices].view(B, f, 1, 1, -1)
+        static_freqs_h = freqs_h[:h].view(1, 1, h, 1, -1)
+        static_freqs_w = freqs_w[:w].view(1, 1, 1, w, -1)
+
+        freqs_full = torch.cat([
+            causal_freqs_t.expand(B, f, h, w, -1),
+            static_freqs_h.expand(B, f, h, w, -1),
+            static_freqs_w.expand(B, f, h, w, -1)
+        ], dim=-1)
+        freqs_full = freqs_full.reshape(B, full_S, c) # Shape: [4, 1560, C/2]
+
+        # 2. 核心修改：使用索引为扁平化token提取频率
+        batch_indices = pack['batch_indices']       # Shape: [3432]
+        original_indices = pack['original_indices'] # Shape: [3432]
+        
+        # freqs_full[batch_indices, original_indices] -> 为每个token找到它在(B,S)矩阵中的位置并取值
+        # freqs_gathered = freqs_full[batch_indices, original_indices] # Shape: [3432, C/2]
+        flat_indices = batch_indices * full_S + original_indices
+        freqs_gathered = freqs_full.view(B * full_S, c)[flat_indices]
+        
+        # 3. 应用RoPE
+        # x shape: [3432, 12, 128] -> reshape to [3432, 12, 64, 2]
+        x_complex = torch.view_as_complex(x.float().reshape(total_tokens, n_heads, c, 2))
+        
+        # freqs_gathered shape: [3432, 64] -> unsqueeze to [3432, 1, 64] for broadcasting
+        freqs_vectorized = freqs_gathered.unsqueeze(1)
+        
+        x_rotated = x_complex * freqs_vectorized # Broadcasting works
+        
+        output = torch.view_as_real(x_rotated).flatten(2).type_as(x) # Shape: [3432, 12, 128]
+        return output
+    
     B, S, N, D = x.shape
     c = D // 2
 
@@ -66,7 +106,7 @@ def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
     # 假设批次内所有样本的f, h, w都相同，这在大多数情况下成立
     # 如果不同，需要更复杂的处理，如padding和masking
     f, h, w = grid_sizes[0].tolist()
-    assert S == f * h * w, "Sequence length does not match grid dimensions."
+    full_S = f * h * w  # 全量序列长度 1560
 
     # 4. 并行构建旋转频率 (核心优化点)
     # --------------------------------------------------------------------
@@ -92,6 +132,9 @@ def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
     static_freqs_h = freqs_h[:h].view(1, 1, h, 1, -1)
     static_freqs_w = freqs_w[:w].view(1, 1, 1, w, -1)
 
+
+    # print(freqs_t.shape, freqs_h.shape, freqs_w.shape,t_indices.shape, causal_freqs_t.shape, static_freqs_h.shape, static_freqs_w.shape)
+
     # c. 组合所有频率
     # 利用广播机制，将t, h, w的频率组合起来
     # causal_freqs_t (B, f, 1, 1, dim_t)
@@ -105,20 +148,44 @@ def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
         static_freqs_w.expand(B, f, h, w, -1)
     ], dim=-1)
 
+    freqs_full = freqs_full.reshape(B, full_S, c)
     # d. 变形以匹配输入x的形状
     # (B, f, h, w, c) -> (B, S, c) -> (B, S, 1, c)
-    freqs_vectorized = freqs_full.reshape(B, S, c).unsqueeze(2)
+    # freqs_vectorized = freqs_full.reshape(B, S, c).unsqueeze(2)
     # --------------------------------------------------------------------
 
     # 5. 并行应用RoPE
     # a. 将x转换为复数形式, (B, S, N, D) -> (B, S, N, c, 2) -> (B, S, N, c)
     x_complex = torch.view_as_complex(x.float().reshape(B, S, N, c, 2))
 
+
     # b. 执行旋转: x_complex * freqs_vectorized
     # x_complex shape:      (B, S, N, c)
     # freqs_vectorized shape: (B, S, 1, c)
     # freqs_vectorized 会自动广播到 (B, S, N, c)
+    # if mask is not None:
+    #     # mask 形状为 (B, full_S)
+    #     mask_flat = mask.view(B, full_S)
+        
+    #     # 使用和外部 gather x 时完全相同的 topk 逻辑获取 sparse_indices
+    #     # 这里的 S 就是稀疏后的 token 数量 (156)
+    #     _, sparse_indices = torch.topk(mask_flat.byte(), k=S, dim=1)
+        
+    #     # 扩展 indices 以便 gather freqs_full: (B, S, c)
+    #     expanded_indices = sparse_indices.unsqueeze(-1).expand(-1, -1, c)
+        
+    #     # 提取稀疏 token 对应的频率: (B, 1560, c) -> (B, 156, c)
+    #     freqs_full = freqs_full.gather(1, expanded_indices)
+    # ===============================================
+
+    # 变形以匹配输入x的形状: (B, S, 1, c)
+    freqs_vectorized = freqs_full.unsqueeze(2)
+
+    # 5. 并行应用RoPE
     x_rotated = x_complex * freqs_vectorized
+    # print(x_rotated.shape)
+
+    # print(freqs_full.shape, freqs_vectorized.shape, x_complex.shape,x_rotated.shape)
 
     # c. 转换回实数张量, (B, S, N, c) -> (B, S, N, c, 2) -> (B, S, N, D)
     output = torch.view_as_real(x_rotated).flatten(3).type_as(x)
@@ -127,11 +194,6 @@ def causal_rope_apply(x, grid_sizes, freqs, start_frame=0):
     # 如果 S > f*h*w, 则需要:
     # seq_len = f * h * w
     # output = torch.cat([output[:, :seq_len], x[:, seq_len:]], dim=1)
-
-    # 计时器结束
-    # #torch.cuda.synchronize(x.device)
-    # end_rope_time = time.time()
-    # print(f"### time for PARALLEL apply rope: {end_rope_time - start_rope_time}")
 
     return output
 
@@ -163,8 +225,7 @@ class CausalWanSelfAttention(nn.Module):
         self.norm_q = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
         self.norm_k = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
 
-    def forward(self, x, seq_lens, grid_sizes, freqs, block_mask, kv_cache=None, current_start=0, current_end=0
-                ,flow_guidance_cache = None, latent_flow_data = None, times_for_rolling = 0):
+    def forward(self, x, seq_lens, grid_sizes, freqs, block_mask, kv_cache=None, current_start=0, current_end=0, pack = None):
         r"""
         Args:
             x(Tensor): Shape [B, L, num_heads, C / num_heads]
@@ -173,6 +234,125 @@ class CausalWanSelfAttention(nn.Module):
             freqs(Tensor): Rope freqs, shape [1024, C / num_heads / 2]
             block_mask (BlockMask)
         """
+        use_sparse = False if pack==None else pack['use_sparse']
+        mask=pack['mask'] if 'mask' in pack else None
+
+        if use_sparse:
+            # x shape: [3432, 1536]
+            total_tokens, C = x.shape
+            n, d = self.num_heads, self.head_dim
+
+            # 1. QKV 投射
+            # q,k,v shape: [3432, 1536]
+            q = self.norm_q(self.q(x))
+            k = self.norm_k(self.k(x))
+            v = self.v(x)
+            
+            # reshape to [3432, 12, 128]
+            q = q.view(total_tokens, n, d)
+            k = k.view(total_tokens, n, d)
+            v = v.view(total_tokens, n, d)
+
+            # 2. RoPE
+            # roped_query, roped_key shape: [3432, 16, 96]
+            # frame_seqlen = pack['full_seq_len'] // grid_sizes[0, 0].item()
+            # kv_cache_size = kv_cache["k"].shape[1]
+            # sink_tokens = self.sink_size * frame_seqlen
+            current_start_frame = current_start // pack['frame_seqlen']
+
+            roped_query = causal_rope_apply(q, grid_sizes, freqs, current_start_frame, pack).type_as(v)
+            roped_key = causal_rope_apply(k, grid_sizes, freqs, current_start_frame, pack).type_as(v)
+
+            # 3. KV Cache 更新 (需要按批次进行)
+            B = pack['sparse_bs'] + pack['dense_bs']
+            
+            batch_indices=pack['batch_indices']
+            local_indices=pack['original_indices']
+
+            # ring_capacity = kv_cache_size - sink_tokens
+            # write_start = torch.where(
+            #     current_start < kv_cache_size,
+            #     current_start,
+            #     sink_tokens + ((current_start - kv_cache_size) % ring_capacity)
+            # )
+            write_start=pack['write_start']
+            # print(sink_tokens,frame_seqlen,current_start,ring_capacity,write_start)
+            # write_start shape: [B], e.g., [10, 20, 30, 40]
+            
+            # 然后，将每个 token 的相对位置加上其所属序列的写入起始位置 (write_start)
+            # 我们使用 batch_indices 从 write_start 中 gather 正确的起始偏移量
+            start_offsets = write_start[batch_indices]
+            sequence_indices = local_indices + start_offsets
+            # sequence_indices shape: [total_tokens]
+
+            # c. 使用 index_put_ 并行地将所有 token 写入 KV Cache
+            # index_put_ 使用我们生成的 (batch, sequence) 索引对，
+            # 从 roped_key 和 v 中按顺序取出 token，并放置到 cache 的正确位置。
+            # 这是一个高效的、原子的 scatter 操作。
+            kv_cache["k"].index_put_((batch_indices, sequence_indices), roped_key)
+            kv_cache["v"].index_put_((batch_indices, sequence_indices), v)
+        
+            # 4. Flash Attention with cu_seqlens
+            # effective_seqlens = torch.minimum(
+            #     current_start + pack['full_seq_len'], # 注意这里是 lengths
+            #     torch.tensor(kv_cache_size, device=current_start.device, dtype=torch.long)
+            # ).to(torch.int32)
+            effective_seqlens=pack['effective_seqlens']
+            # is_full=(effective_seqlens == kv_cache_size).all()
+            is_full=pack['is_full']
+
+            # FlashAttention v2 支持 packed Q 和 batched KV Cache
+            # roped_query shape: [3432, 16, 96]
+            # kv_cache["k"] shape: [4, CacheLen, 16, 96]
+            # torch.cuda.synchronize(x.device)
+            # end=time.time()
+            if is_full:
+                k_packed=kv_cache["k"].reshape(-1, n, d)
+                v_packed=kv_cache["v"].reshape(-1, n, d)
+            else:
+                k_valid_list = []
+                v_valid_list = []
+                for i in range(B):
+                    seq_len_i = effective_seqlens[i].item()
+                    # 取出第 i 个 batch 的有效 token，形状为 [seq_len_i, n, d]
+                    k_valid_list.append(kv_cache["k"][i, :seq_len_i, :, :])
+                    v_valid_list.append(kv_cache["v"][i, :seq_len_i, :, :])
+                    
+                # 拼接成展平格式，形状为 [total_k_tokens, n, d]
+                k_packed = torch.cat(k_valid_list, dim=0)
+                v_packed = torch.cat(v_valid_list, dim=0)
+
+            # torch.cuda.synchronize(x.device)
+            # end1=time.time()
+            # print("k valid",end1-end)
+
+            # 构造 KV 的 cu_seqlens
+            # cu_seqlens_k = torch.cat([
+            #     torch.zeros(1, dtype=torch.int32, device=x.device),
+            #     torch.cumsum(effective_seqlens, dim=0).to(torch.int32)
+            # ])
+            cu_seqlens_k=pack['cu_seqlens_k']
+            
+            # max_seqlen_k = effective_seqlens.max().item()
+            # max_seqlen_q = pack['lengths'].max().item()
+            max_seqlen_k=pack['max_seqlen_k']
+            max_seqlen_q=pack['max_seqlen_q']
+
+            # 统一使用 flash_attn_varlen_func
+            x = flash_attn_interface.flash_attn_varlen_func(
+                q=roped_query,
+                k=k_packed,
+                v=v_packed,
+                cu_seqlens_q=pack['cu_seqlens'],
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_q,
+                max_seqlen_k=max_seqlen_k,
+            )
+
+            x = x.flatten(1)
+            x = self.o(x)
+            return x
+
         # print("entering basic self attn:")
         #torch.cuda.synchronize(x.device)
         start_basic_attn_time = time.time()
@@ -187,16 +367,12 @@ class CausalWanSelfAttention(nn.Module):
 
         q, k, v = qkv_fn(x)
 
-        use_flow_guidance = (
-            latent_flow_data is not None and
-            flow_guidance_cache is not None
-        )
+        
         # print(latent_flow_data==None,flow_guidance_cache==None,use_flow_guidance)
         # if (use_flow_guidance):
         #     print(x.shape,flow_guidance_cache.shape, latent_flow_data['flow'].shape,latent_flow_data['mask'].shape)
         #     for i in range (flow_guidance_cache.shape[0]): print(i,torch.mean(flow_guidance_cache[i]),torch.mean(latent_flow_data['flow'][i]),torch.mean(latent_flow_data['mask'][i].float()))
 
-        use_flow_guidance = False
         # #torch.cuda.synchronize(x.device)
         # end_prepare_qkv_time=time.time()
         # print("###time for prepare qkv:",end_prepare_qkv_time-start_basic_attn_time)
@@ -233,7 +409,7 @@ class CausalWanSelfAttention(nn.Module):
             )[:, :, :-padded_length].transpose(2, 1)
 
         else:
-            frame_seqlen = math.prod(grid_sizes[0][1:]).item()
+            frame_seqlen = x.shape[1] // grid_sizes[0, 0].item()
             num_new_tokens = q.shape[1]
             kv_cache_size = kv_cache["k"].shape[1]
             sink_tokens = self.sink_size * frame_seqlen
@@ -242,80 +418,36 @@ class CausalWanSelfAttention(nn.Module):
             roped_query = causal_rope_apply(q, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
             roped_key = causal_rope_apply(k, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
 
-            # This is the same rolling cache logic as before
-            is_append_phase = (current_start + num_new_tokens) <= kv_cache_size
-            is_rolling_phase = ~is_append_phase
-            src_start = sink_tokens + num_new_tokens
-            dest_start = sink_tokens
-            dest_end = kv_cache_size - num_new_tokens
-            write_start = kv_cache_size - num_new_tokens
+            # 1. 计算环形缓冲区的容量
+            ring_capacity = kv_cache_size - sink_tokens
 
-            roll_start_event = torch.cuda.Event(enable_timing=True)
-            roll_end_event = torch.cuda.Event(enable_timing=True)
-            roll_start_event.record()
+            # 2. 计算每个 Batch 样本的写入起始位置 (O(1) 计算，无需数据搬运)
+            # 如果还没满 (current_start < kv_cache_size)，就按顺序写
+            # 如果满了，就在 [sink_tokens, kv_cache_size) 之间循环覆盖最老的数据
+            write_starts = torch.where(
+                current_start < kv_cache_size,
+                current_start,
+                sink_tokens + ((current_start - kv_cache_size) % ring_capacity)
+            )
 
-            kv_cache["k"][is_rolling_phase, dest_start:dest_end] = kv_cache["k"][is_rolling_phase, src_start:].clone()
-            kv_cache["v"][is_rolling_phase, dest_start:dest_end] = kv_cache["v"][is_rolling_phase, src_start:].clone()
+            # 3. 向量化写入 Cache (高级索引)
+            B = x.shape[0]
+            batch_indices = torch.arange(B, device=x.device).unsqueeze(1).expand(-1, num_new_tokens)
+            offsets = torch.arange(num_new_tokens, device=x.device).unsqueeze(0)
+            write_cols = write_starts.unsqueeze(1) + offsets
 
-            roll_end_event.record()
-            roll_end_event.synchronize()
-            roll_time = roll_start_event.elapsed_time(roll_end_event)
-            # cnt_true_rolling = is_rolling_phase.sum().item()
-            # print(f"rolling cache: {cnt_true_rolling}, time: {roll_time} ms")
-            times_for_rolling += roll_time
+            # 直接把新 Token 覆盖到算好的位置，零拷贝！
+            kv_cache["k"][batch_indices, write_cols] = roped_key
+            kv_cache["v"][batch_indices, write_cols] = v
 
-            kv_cache["k"][is_rolling_phase, write_start:] = roped_key[is_rolling_phase]
-            kv_cache["v"][is_rolling_phase, write_start:] = v[is_rolling_phase]
-            append_indices = torch.where(is_append_phase)[0]
-            if append_indices.numel() > 0:
-                append_starts = current_start[append_indices]
-                append_offsets = torch.arange(num_new_tokens, device=x.device)
-                append_cols = append_starts.unsqueeze(1) + append_offsets.unsqueeze(0)
-                append_rows = append_indices.unsqueeze(1).expand(-1, num_new_tokens)
-                kv_cache["k"][append_rows, append_cols] = roped_key[append_indices]
-                kv_cache["v"][append_rows, append_cols] = v[append_indices]
-
+            # 4. 计算有效长度 (和原来保持一致)
             effective_seqlens = torch.minimum(
                 current_start + num_new_tokens,
                 torch.tensor(kv_cache_size, device=current_start.device, dtype=torch.long)
             ).to(torch.int32)
 
-            if use_flow_guidance:
-                flow = latent_flow_data["flow"]
-                occ_mask = latent_flow_data["mask"] # This is a boolean mask [B, 1, H, W]
-
-                # Reshape previous output x_prev to be image-like for warping
-                # x_prev has shape [B, S, C] where S = H*W and C = n*d
-                x_prev = flow_guidance_cache
-                _, _, latent_h, latent_w = occ_mask.shape
-                x_prev_image = x_prev.view(b, latent_h, latent_w, n * d).permute(0, 3, 1, 2)
-
-                x_warped_image = universal_flow_warp(x_prev_image.float(), flow.float()).to(dtype=x.dtype)
-                x_warped = x_warped_image.permute(0, 2, 3, 1).view(b, s, n * d)
-                x = x_warped.view(b, s, n, d) # Default output is the warped result
-                occ_mask_flat = occ_mask.view(b, s) # Shape: [4, 1560]
-
-                num_sparse_tokens = int(torch.sum(occ_mask_flat[0]).item())
-
-                if num_sparse_tokens > 0:
-                    # a. Get sparse indices for each batch item using topk. Shape: [B, num_sparse_tokens]
-                    _, sparse_indices = torch.topk(occ_mask_flat.byte(), k=num_sparse_tokens, dim=1)
-
-                    # b. Gather sparse queries using the batched indices.
-                    # Expand indices from [B, K] to [B, K, N, D] for gather.
-                    expanded_indices = sparse_indices.view(b, num_sparse_tokens, 1, 1).expand(-1, -1, n, d)
-                    q_sparse = roped_query.gather(1, expanded_indices)
-
-                    x_sparse_output = flash_attn_interface.flash_attn_with_kvcache(
-                        q=q_sparse,
-                        k_cache=kv_cache["k"],
-                        v_cache=kv_cache["v"],
-                        cache_seqlens=effective_seqlens,
-                    )
-                    sparse_results_full = torch.zeros_like(x)
-                    sparse_results_full.scatter_(1, expanded_indices, x_sparse_output)
-                    occ_mask_expanded = occ_mask_flat.view(b, s, 1, 1).expand_as(x)
-                    x = torch.where(occ_mask_expanded, sparse_results_full, x)
+            if use_sparse:
+                pass
 
             else:
                 x = flash_attn_interface.flash_attn_with_kvcache(
@@ -326,14 +458,12 @@ class CausalWanSelfAttention(nn.Module):
                 )
 
         x = x.flatten(2)
-        if flow_guidance_cache is not None:
-            flow_guidance_cache.copy_(x.detach())
         x = self.o(x)
 
         #torch.cuda.synchronize(x.device)
         end_basic_attn_time = time.time()
         # print("###time for self attn self.o:",end_basic_attn_time-end_flashattn_time)
-        return x, times_for_rolling
+        return x
 
 
 class CausalWanAttentionBlock(nn.Module):
@@ -389,9 +519,7 @@ class CausalWanAttentionBlock(nn.Module):
         crossattn_cache=None,
         current_start=0,
         current_end=0,
-        flow_guidance_cache = None,
-        latent_flow_data = None,
-        times_for_rolling = 0,
+        pack = None
     ):
         r"""
         Args:
@@ -401,6 +529,58 @@ class CausalWanAttentionBlock(nn.Module):
             grid_sizes(Tensor): Shape [B, 3], the second dimension contains (F, H, W)
             freqs(Tensor): Rope freqs, shape [1024, C / num_heads / 2]
         """
+        use_sparse = False if pack==None else pack['use_sparse']
+        if use_sparse:
+            # x shape: [3432, 1536]
+            # e shape: [4, 1, 6, 1536]
+            batch_indices = pack['batch_indices'] # Shape: [3432]
+
+            # 1. 调制 e 和 LayerNorm
+            e_chunks = (self.modulation.unsqueeze(1) + e).chunk(6, dim=2)
+            # e_chunks[i] shape: [4, 1, 1, 1536]
+            
+            # --- Self-Attention前的调制 ---
+            # e0_gathered shape: [3432, 1, 1, 1536] -> [3432, 1536]
+            e0_gathered = e_chunks[0][batch_indices].squeeze(1).squeeze(1)
+            e1_gathered = e_chunks[1][batch_indices].squeeze(1).squeeze(1)
+            
+            norm1_out = self.norm1(x) # Shape: [3432, 1536]
+            attn_x = norm1_out * (1 + e1_gathered) + e0_gathered # Shape: [3432, 1536]
+            
+            # 2. Self-Attention
+            y = self.self_attn(
+                attn_x,
+                seq_lens, grid_sizes,
+                freqs, block_mask, kv_cache, current_start, current_end,
+                pack=pack) # y shape: [3432, 1536]
+
+            # --- Self-Attention后的残差连接 ---
+            e2_gathered = e_chunks[2][batch_indices].squeeze(1).squeeze(1)
+            x = x + y * e2_gathered # Shape: [3432, 1536]
+
+            # 3. Cross-Attention & FFN (同样使用 gather)
+            # --- Cross-Attention ---
+            # norm3(x) shape: [3432, 1536]
+            # context shape: [4, L_ctx, 1536]
+            # cross_attn 需要 cu_seqlens 来匹配 packed_x 和 batched_context
+            # 假设 cross_attn 内部已适配
+            cross_attn_out = self.cross_attn(self.norm3(x), context, context_lens, crossattn_cache=crossattn_cache, pack=pack)
+            x = x + cross_attn_out
+
+            # --- FFN前的调制 ---
+            e3_gathered = e_chunks[3][batch_indices].squeeze(1).squeeze(1)
+            e4_gathered = e_chunks[4][batch_indices].squeeze(1).squeeze(1)
+            norm2_out = self.norm2(x)
+            ffn_in = norm2_out * (1 + e4_gathered) + e3_gathered
+            
+            # --- FFN ---
+            ffn_out = self.ffn(ffn_in) # Shape: [3432, 1536]
+            
+            # --- FFN后的残差连接 ---
+            e5_gathered = e_chunks[5][batch_indices].squeeze(1).squeeze(1)
+            x = x + ffn_out * e5_gathered # Shape: [3432, 1536]
+            
+            return x
         #torch.cuda.synchronize(x.device)
         start_selfattn_block_time=time.time()
         num_frames, frame_seqlen = e.shape[1], x.shape[1] // e.shape[1]
@@ -410,13 +590,16 @@ class CausalWanAttentionBlock(nn.Module):
         # assert e[0].dtype == torch.float32
 
         # self-attention
-        y, times_for_rolling = self.self_attn(
-            (self.norm1(x).unflatten(dim=1, sizes=(num_frames, frame_seqlen))
-             * (1 + e[1]) + e[0]).flatten(1, 2),
+        # print(x.shape,len(e),e[0].shape)
+        attn_x=self.norm1(x).unflatten(dim=1, sizes=(num_frames, frame_seqlen))
+        attn_x=attn_x * (1 + e[1]) + e[0]
+        # print(attn_x.shape)
+        attn_x=attn_x.flatten(1, 2)
+        y = self.self_attn(
+            attn_x,
             seq_lens, grid_sizes,
             freqs, block_mask, kv_cache, current_start, current_end,
-            flow_guidance_cache=flow_guidance_cache,
-            latent_flow_data=latent_flow_data, times_for_rolling=times_for_rolling)
+            pack=pack)
 
         # with amp.autocast(dtype=torch.float32):
         x = x + (y.unflatten(dim=1, sizes=(num_frames, frame_seqlen))
@@ -442,7 +625,7 @@ class CausalWanAttentionBlock(nn.Module):
         #torch.cuda.synchronize(x.device)
         end_crossattn_ffn_block_time=time.time()
         # print("###time for cross-attn + ffn block:",end_crossattn_ffn_block_time-end_selfattn_block_time)
-        return x, times_for_rolling
+        return x
 
 
 class CausalHead(nn.Module):
@@ -472,9 +655,27 @@ class CausalHead(nn.Module):
         # with amp.autocast(dtype=torch.float32):
         num_frames, frame_seqlen = e.shape[1], x.shape[1] // e.shape[1]
         e = (self.modulation.unsqueeze(1) + e).chunk(2, dim=2)
-        x = (self.head(
-            self.norm(x).unflatten(dim=1, sizes=(num_frames, frame_seqlen)) *
-            (1 + e[1]) + e[0]))
+        x=self.norm(x).unflatten(dim=1, sizes=(num_frames, frame_seqlen))
+        # print(e[0].shape,x.shape)
+        x = (self.head(x*(1 + e[1]) + e[0]))
+        return x
+    
+    def forward_sparse(self, x, e,pack):
+        r"""
+        Args:
+            x(Tensor): Shape [B, L1, C]
+            e(Tensor): Shape [B, F, 1, C]
+        """
+        # assert e.dtype == torch.float32
+        # with amp.autocast(dtype=torch.float32):
+        batch_indices = pack['batch_indices']
+        e = (self.modulation.unsqueeze(1) + e).chunk(2, dim=2)
+        e_head_0_gathered = e[0][batch_indices].squeeze(1).squeeze(1)
+        e_head_1_gathered = e[1][batch_indices].squeeze(1).squeeze(1)
+        
+        norm_out = self.norm(x) # x shape: [3432, 1536]
+        head_in = norm_out * (1 + e_head_1_gathered) + e_head_0_gathered
+        x = self.head(head_in)
         return x
 
 
@@ -608,6 +809,7 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         self.num_frame_per_block = 1
 
         self.count=0
+        self.flow_guidance_cache=None
 
     def _set_gradient_checkpointing(self, module, value=False):
         self.gradient_checkpointing = value
@@ -672,7 +874,6 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         block_mode: str = 'input',
         block_num: int = [-1],
         patched_x_shape: torch.Tensor = None,
-        flow_guidance_cache = None,
         latent_flow_data = None
     ):
         r"""
@@ -769,28 +970,139 @@ class CausalWanModel(ModelMixin, ConfigMixin):
             context_lens=context_lens,
             block_mask=self.block_mask
         )
-        #torch.cuda.synchronize(x.device)
-        text_embedding_end_time=time.time()
-        start_block_time=text_embedding_end_time
-        # print("###time for text embedding:",text_embedding_end_time-time_embedding_end_time)
 
-        def create_custom_forward(module):
-            def custom_forward(*inputs, **kwargs):
-                return module(*inputs, **kwargs)
-            return custom_forward
+        use_sparse=(latent_flow_data!=None and self.flow_guidance_cache!=None) and self.count%5!=0
+        sparse_bs = 2  # ===================== 设定前几个 chunk 做稀疏 =====================
+        pack={}
+        pack['use_sparse'] = use_sparse
 
-        # print(x.shape,grid_sizes,grid_sizes.shape)
-        # x=x[:,156,:]
+        # print("before dit for:",x.shape)
 
-        # if(grid_sizes[0][0]==1):
-        #     for index in range (x.shape[0]):
-        #         cur_x=x[index]
-        #         cur_size=grid_sizes[index]
-        #         cur_x=cur_x.transpose(0,1).view(x.shape[2],cur_size[1],cur_size[2])
-        #         visual_x=visualize_latent_to_image(cur_x)
-        #         cv2.imwrite(f"./outputs/dit/{self.count}_{index}_pre.png",visual_x)
+        # torch.cuda.synchronize(x.device)
+        # start=time.time()
 
-        times_for_rolling = 0
+        # ===================== 1. 将输入拆分为 Sparse 和 Dense 两部分 =====================
+        if use_sparse:
+            B, S, C = x.shape
+            dense_bs = B - sparse_bs
+            # --- a. 拆分数据和掩码 ---
+            x_sparse_full = x[:sparse_bs]
+            x_dense = x[sparse_bs:]
+            
+            occ_mask_half = latent_flow_data["mask_half"].view(B, S)
+            occ_mask_sparse = occ_mask_half[:sparse_bs]
+
+            num_sparse_tokens = 0
+            x_sparse_gathered = torch.empty(sparse_bs, 0, C, device=x.device, dtype=x.dtype)
+            sparse_indices = torch.empty(sparse_bs, 0, device=x.device, dtype=torch.long)
+
+            # 只有在存在稀疏样本时才计算 num_sparse_tokens 并收集数据
+            if sparse_bs > 0:
+                # 假设所有稀疏样本都减少到相同数量的令牌
+                num_sparse_tokens = int(torch.sum(occ_mask_sparse[0]).item())
+                
+                if num_sparse_tokens > 0:
+                    # 获取稀疏令牌的索引，形状为 (sparse_bs, num_sparse_tokens)
+                    _, sparse_indices = torch.topk(occ_mask_sparse.byte(), k=num_sparse_tokens, dim=1)
+                    # 扩展索引以便在最后一维收集数据
+                    expanded_indices = sparse_indices.unsqueeze(-1).expand(-1, -1, C)
+                    # 从原始稀疏张量中收集令牌
+                    x_sparse_gathered = x_sparse_full.gather(1, expanded_indices)
+
+            x_flat = torch.cat([
+                x_sparse_gathered.view(-1, C), # 如果 sparse_bs=0, shape is (0, C)
+                x_dense.view(-1, C)            # 如果 dense_bs=0, shape is (0, C)
+            ], dim=0)
+            
+            batch_ids = torch.arange(B, device=x.device)
+            # `lengths` 张量的构建可以正确处理 sparse_bs 或 dense_bs 为 0 的情况。
+            # torch.full((0,), ...) 会创建一个空张量，torch.cat 会忽略它。
+            lengths = torch.cat([
+                torch.full((sparse_bs,), num_sparse_tokens, device=x.device, dtype=torch.long),
+                torch.full((dense_bs,), S, device=x.device, dtype=torch.long)
+            ])
+            # `repeat_interleave` 也能正确处理空的 `lengths` 或 `repeats`。
+            batch_indices = torch.repeat_interleave(batch_ids, repeats=lengths)
+
+            # ii. `original_indices`: 每个令牌在其原始序列中的位置。
+            dense_indices_template = torch.arange(S, device=x.device)
+            # .expand(0, -1) 会创建一个 shape 为 (0, S) 的空张量，这是正确的。
+            dense_indices = dense_indices_template.expand(dense_bs, -1)
+            # 再次利用 torch.cat 对空张量的处理能力。
+
+            # print(sparse_indices.shape,dense_indices.shape)
+            original_indices = torch.cat([
+                sparse_indices.reshape(-1),
+                dense_indices.reshape(-1)
+            ], dim=0)
+
+            # iii. `cu_seqlens`: 累积序列长度。
+            lengths_with_zero = torch.cat([torch.tensor([0], device=x.device, dtype=torch.long), lengths])
+            cu_seqlens = torch.cumsum(lengths_with_zero, dim=0,dtype=torch.int32)
+
+            #self attention pre compute
+            kv_cache_size = kv_cache[0]["k"].shape[1]
+            full_seq_len = S
+
+            effective_seqlens = torch.minimum(
+                current_start + full_seq_len, 
+                torch.tensor(kv_cache_size, device=x.device, dtype=torch.long)
+            ).to(torch.int32)
+            
+            # 预计算 max_seqlen (使用 GPU 上的 max，不调用 .item())
+            pack['max_seqlen_q'] = S 
+            pack['max_seqlen_k'] = effective_seqlens.max() # 保持为 Tensor
+            
+            # 构造 cu_seqlens_k
+            pack['cu_seqlens_k'] = torch.cat([
+                torch.zeros(1, dtype=torch.int32, device=x.device),
+                torch.cumsum(effective_seqlens, dim=0, dtype=torch.int32)
+            ])
+            
+            # 存入 effective_seqlens 用于后续拼接
+            pack['effective_seqlens'] = effective_seqlens
+            pack['is_full']=(effective_seqlens == kv_cache_size).all()
+
+            frame_seqlen = S // grid_sizes[0, 0].item()
+            pack['frame_seqlen']=frame_seqlen
+            sink_tokens = self.blocks[0].self_attn.sink_size * frame_seqlen
+            ring_capacity = kv_cache_size - sink_tokens
+            pack['write_start']=torch.where(
+                current_start < kv_cache_size,
+                current_start,
+                sink_tokens + ((current_start - kv_cache_size) % ring_capacity)
+            )
+
+
+
+            #T2V cross-attn 需要的 context 长度,pre compute
+            b = context.size(0)
+            if context_lens is None:
+                context_lens = torch.tensor([crossattn_cache[0]["k"].shape[1]] * b, device=crossattn_cache[0]["k"].device, dtype=torch.int32)
+            pack['cu_seqlens_ctx'] = torch.cat([context_lens.new_zeros([1]), context_lens.cumsum(0, dtype=torch.int32)])
+            pack['max_seqlen_ctx'] = context_lens.max() # 保持为 Tensor
+
+
+
+            # --- e. 更新 kwargs 和输入张量以供后续模块使用 ---
+            pack.update({
+                'batch_indices': batch_indices,
+                'original_indices': original_indices,
+                'cu_seqlens': cu_seqlens,
+                'lengths': lengths,
+                'sparse_bs': sparse_bs,
+                'dense_bs': dense_bs,
+                'num_sparse_tokens': num_sparse_tokens,
+                'full_seq_len': S,
+                'sparse_indices': sparse_indices, # 用于最后解包
+                'mask': occ_mask_sparse # 传递给RoPE
+            })
+            x = x_flat
+
+        # torch.cuda.synchronize(x.device)
+        # end=time.time()
+        # print("sparse init",end-start) #0.0006s
+
         for block_index, block in enumerate(self.blocks):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
                 assert False
@@ -805,41 +1117,143 @@ class CausalWanModel(ModelMixin, ConfigMixin):
                         "crossattn_cache": crossattn_cache[block_index],
                         "current_start": current_start,
                         "current_end": current_end,
-                        "flow_guidance_cache": None if flow_guidance_cache is None or block_index >= 5 else flow_guidance_cache[block_index],
-                        "latent_flow_data": latent_flow_data,
-                        "times_for_rolling": times_for_rolling
+                        "pack": pack,
                     }
                 )
-                x, times_for_rolling = block(x, **kwargs)
-                #torch.cuda.synchronize(x.device)
-                block_end_time=time.time()
-                # print(f"###time for block {block_index} :",block_end_time-start_block_time)
-                start_block_time=block_end_time
-        print(f"total time for rolling cache in all blocks: {times_for_rolling:.2f} ms")
-
-        # if(grid_sizes[0][0]==1):
-        #     for index in range (x.shape[0]):
-        #         cur_x=x[index]
-        #         cur_size=grid_sizes[index]
-        #         cur_x=cur_x.transpose(0,1).view(x.shape[2],cur_size[1],cur_size[2])
-        #         visual_x=visualize_latent_to_image(cur_x)
-        #         cv2.imwrite(f"./outputs/dit/{self.count}_{index}_after.png",visual_x)
-
-        # self.count+=1
-
-
+                # torch.cuda.synchronize(x.device)
+                # end=time.time()
+                x = block(x, **kwargs)
+                # torch.cuda.synchronize(x.device)
+                # block_end_time=time.time()
+                # print(f"###time for block {block_index} :",block_end_time-end)
+                # start_block_time=block_end_time
+        
         if block_mode == 'input' and block_num[-1] == len(self.blocks):
             return x, patched_x_shape
 
-        # head
-        x = self.head(x, e.unflatten(dim=0, sizes=t.shape).unsqueeze(2))
-        #torch.cuda.synchronize(x.device)
-        head_end_time=time.time()
-        # print("###time for head:",head_end_time-start_block_time)
+        # ===================== 3. Head 处理与重新拼接 =====================
+        e_head = e.unflatten(dim=0, sizes=t.shape).unsqueeze(2)
+
+        # print("after dit",x.shape,e_head.shape)
+
+        # torch.cuda.synchronize(x.device)
+        # start=time.time()
+
+        if use_sparse:
+            x=self.head.forward_sparse(x,e_head,pack)
+            sparse_bs = pack['sparse_bs']               # 2
+            dense_bs = pack['dense_bs']                 # 2
+            num_sparse_tokens = pack['num_sparse_tokens'] # 156
+            full_seq_len = pack['full_seq_len']         # 1560
+            out_channels = x.shape[-1]                  # 64
+            B = sparse_bs + dense_bs                    # 4
+            
+            # --- 1. 并行解包稀疏部分 (Batched Scatter) ---
+            x_sparse_full = torch.zeros(sparse_bs, full_seq_len, out_channels, device=x.device, dtype=x.dtype)
+            if sparse_bs > 0:
+                # a. 从扁平输出中提取所有稀疏token
+                # Total sparse tokens = 2 * 156 = 312
+                num_total_sparse = sparse_bs * num_sparse_tokens
+                x_sparse_packed = x[:num_total_sparse].view(sparse_bs, num_sparse_tokens, out_channels)
+                # x_sparse_packed shape: [2, 156, 64]
+
+                # b. 准备用于 scatter 的索引
+                # pack['sparse_indices'] shape: [2, 156]
+                # 我们需要将其扩展以匹配 x_sparse_packed 的维度
+                expanded_indices = pack['sparse_indices'].unsqueeze(-1).expand(-1, -1, out_channels)
+                # expanded_indices shape: [2, 156, 64]
+
+                # c. 执行批次化的 scatter 操作
+                # 将 x_sparse_packed 中的 token 填充到 x_sparse_full 的正确位置
+                x_sparse_full.scatter_(
+                    dim=1, # 沿着序列长度维度 (1560) 进行 scatter
+                    index=expanded_indices, 
+                    src=x_sparse_packed
+                )
+                # x_sparse_full shape: [2, 1560, 64], 包含了被正确放置的稀疏 token 和大量 0
+
+            # --- 2. 并行解包密集部分 (Reshape) ---
+            x_dense_full = torch.empty(dense_bs, full_seq_len, out_channels, device=x.device, dtype=x.dtype)
+            if dense_bs > 0:
+                # a. 从扁平输出中提取所有密集token
+                num_total_sparse = sparse_bs * num_sparse_tokens
+                x_dense_packed = x[num_total_sparse:]
+                
+                # b. 直接 reshape 成目标形状
+                x_dense_full = x_dense_packed.view(dense_bs, full_seq_len, out_channels)
+                # x_dense_full shape: [2, 1560, 64]
+
+            # --- 3. 最终合并 ---
+            # 将稀疏和密集的结果沿着批次维度拼接起来
+            x = torch.cat([x_sparse_full, x_dense_full], dim=0)
+            # x shape: [4, 1560, 64]
+
+            # 添加一个 singleton 维度以匹配非稀疏分支的输出格式 [B, 1, S, C]
+            x = x.unsqueeze(1)
+        else:
+            x = self.head(x, e_head)
+
+        # print("head",x.shape)
+
+        # torch.cuda.synchronize(x.device)
+        # end=time.time()
+        # print("unpack",end-start) #0.00058
+        
 
         # unpatchify
         x = self.unpatchify(x, grid_sizes)
-        return torch.stack(x)
+        x = torch.stack(x)
+
+        # print(x.shape)
+
+        # torch.cuda.synchronize(x.device)
+        # start=time.time()
+
+        # ===================== 4. 光流 Warp 引导 (仅作用于前两个 chunk) =====================
+        if use_sparse and sparse_bs>0:    
+            b, s, _, h, w = x.shape
+            x = x.squeeze(2)
+            flow = latent_flow_data["flow"][:sparse_bs]
+            occ_mask = latent_flow_data["mask"][:sparse_bs]
+            x_prev = self.flow_guidance_cache[:sparse_bs]
+            x_prev_image = x_prev.squeeze(2)
+            
+            x_warped = universal_flow_warp(x_prev_image.float(), flow.float()).to(dtype=x.dtype)
+            occ_mask_expanded = occ_mask.view(sparse_bs, 1, h, w).expand(sparse_bs, s, h, w)
+            x_final = torch.where(occ_mask_expanded, x[:sparse_bs], x_warped)
+            x[:sparse_bs] = x_final
+            x=x.unsqueeze(2)
+            
+        if latent_flow_data is not None: 
+            self.flow_guidance_cache = x
+        self.count+=1
+
+        # cur_k=kv_cache[0]['k']
+        # print("cur_k",cur_k.shape,x.shape)
+        # b,s,n,d=cur_k.shape
+        # cur_k=cur_k.view(b,s,n*d)
+        # cur_k=torch.mean(cur_k,dim=-1)
+        # total_chunk=3
+        # token_per_chunk=s//total_chunk
+        # h=x.shape[-2]//2
+        # w=x.shape[-1]//2
+        # for i in range (b):
+        #     for j in range (total_chunk):
+        #         cur_view=cur_k[i, j*token_per_chunk:(j+1)*token_per_chunk]
+        #         cur_view=cur_view.view(h,w)
+        #         print("batch token",i,j,cur_view.shape)
+        #         for coor_x in range(h):
+        #             print(coor_x,cur_view[coor_x,:].mean())
+
+
+
+
+        # torch.cuda.synchronize(x.device)
+        # end=time.time()
+
+        # print("warp",end-start) #4.95e-5
+
+        return x
 
     def _forward_train(
         self,

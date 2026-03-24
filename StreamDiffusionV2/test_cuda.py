@@ -1,104 +1,153 @@
 import torch
 import time
-import random
+from flash_attn.flash_attn_interface import flash_attn_func, flash_attn_varlen_func
 
-def gpu_busy_work(tensor, iterations=100):
-    """
-    A function that truly keeps the GPU busy by performing multiple matrix multiplications.
-    """
-    local_tensor = tensor
-    for _ in range(iterations):
-        local_tensor = torch.matmul(local_tensor, local_tensor)
-    return local_tensor
+def benchmark_and_verify():
+    # --- 设置 ---
+    torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
 
-def demonstrate_stream_sync_final():
-    if not torch.cuda.is_available():
-        print("CUDA not available, skipping demo.")
-        return
-
-    device = torch.device("cuda:0")
-    # It's good practice to re-initialize streams for clean experiments
-    stream1 = torch.cuda.Stream(device=device)
-    stream2 = torch.cuda.Stream(device=device)
-
-    # --- Scenes 1 and 2 remain the same ---
-    print("--- 场景1: 隐式同步 ---")
-    data_implicit = torch.ones(1, device=device)
-    with torch.cuda.stream(stream1):
-        data_implicit.mul_(2)
-    with torch.cuda.stream(stream2):
-        result_implicit = data_implicit + 1
-    torch.cuda.synchronize()
-    print(f"隐式同步结果: {result_implicit.item()} (正确, 但依赖隐式行为)\n")
-
-    print("--- 场景2: 使用 Event 进行显式同步 ---")
-    data_explicit = torch.ones(1, device=device)
-    event = torch.cuda.Event()
-    with torch.cuda.stream(stream1):
-        data_explicit.mul_(2)
-        event.record()
-    with torch.cuda.stream(stream2):
-        stream2.wait_event(event)
-        result_explicit = data_explicit + 1
-    torch.cuda.synchronize()
-    print(f"显式同步结果: {result_explicit.item()} (正确, 且代码健壮、意图明确)\n")
-
-    # --- 场景3 (最终修正): 隔离竞争操作 ---
-    print("--- 场景3 (最终修正): 隔离竞争操作以强制数据竞争 ---")
-    print("我们移除了前置的'gpu_busy_work'，只让 add_ 和 mul_ 竞争。")
+    # 基础参数
+    B = 4
+    S_dense = 1560
+    S_sparse = 156
+    H = 12
+    D = 128
     
-    results = {}
-    num_runs = 20 # Increase runs to see more variance
-    for i in range(num_runs):
-        data_race = torch.ones(1, device=device)
-        
-        # Enqueue the operations in a tight loop on the CPU side
-        # This makes the submission timing itself a factor in the race
-        with torch.cuda.stream(stream1):
-            data_race.add_(1)
+    # KV Cache 参数
+    K_max_len = 6 * 1560  # KV Cache 的最大物理长度 (9360)
+    K_valid_len = 4*1560    # 当前有效的 KV token 数量
+    
+    dtype = torch.bfloat16
+    device = "cuda"
 
-        with torch.cuda.stream(stream2):
-            data_race.mul_(3)
-        
-        # Synchronize *after* both streams have been given their work
+    print("--- Tensor Initialization ---")
+    print(f"Device: {device}, DType: {dtype}")
+    print(f"KV Cache Physical Shape: [{B}, {K_max_len}, {H}, {D}]")
+    print(f"KV Cache Valid Shape:    [{B}, {K_valid_len}, {H}, {D}]")
+
+    # --- 0. 构造全局 KV Cache 并提取有效部分 ---
+    k_cache_full = torch.randn(B, K_max_len, H, D, device=device, dtype=dtype)
+    v_cache_full = torch.randn(B, K_max_len, H, D, device=device, dtype=dtype)
+    
+    # 在实际计算中，我们只需要有效的 KV token
+    k_valid = k_cache_full[:, :K_valid_len, :, :].contiguous()
+    v_valid = v_cache_full[:, :K_valid_len, :, :].contiguous()
+
+    # --- 1. 4个 chunk 全是稀疏的正常 attn ---
+    q_all_sparse = torch.randn(B, S_sparse, H, D, device=device, dtype=dtype)
+    
+    # --- 2. 4个 chunk 是全量的正常 attn ---
+    q_all_dense = torch.randn(B, S_dense, H, D, device=device, dtype=dtype)
+
+    # --- 3 & 4. 2个稀疏 + 2个全量 ---
+    # 分离的张量 (用于测试项 4)
+    q_dense_half = q_all_dense[:2, :, :, :]   # [2, 1560, H, D]
+    q_sparse_half = q_all_sparse[2:, :, :, :] # [2, 156, H, D]
+    
+    k_valid_dense_half = k_valid[:2, :, :, :]
+    v_valid_dense_half = v_valid[:2, :, :, :]
+    k_valid_sparse_half = k_valid[2:, :, :, :]
+    v_valid_sparse_half = v_valid[2:, :, :, :]
+
+    # 展平的张量 (用于测试项 3)
+    # Q 展平: 2个 1560 + 2个 156
+    q_packed = torch.cat([
+        q_dense_half.reshape(-1, H, D),
+        q_sparse_half.reshape(-1, H, D)
+    ], dim=0)
+    
+    # K/V 展平: 4个 1560 (因为 KV 长度都是 1560)
+    k_packed = k_valid.reshape(-1, H, D)
+    v_packed = v_valid.reshape(-1, H, D)
+
+    # 构造 Varlen 需要的 cu_seqlens
+    seq_lens_q = [S_dense, S_dense, S_sparse, S_sparse]
+    seq_lens_k = [K_valid_len, K_valid_len, K_valid_len, K_valid_len]
+    
+    cu_seqlens_q = torch.tensor([0] + list(torch.cumsum(torch.tensor(seq_lens_q), dim=0)), dtype=torch.int32, device=device)
+    cu_seqlens_k = torch.tensor([0] + list(torch.cumsum(torch.tensor(seq_lens_k), dim=0)), dtype=torch.int32, device=device)
+    
+    max_seqlen_q = S_dense
+    max_seqlen_k = K_valid_len
+
+
+    # --- 性能基准测试 ---
+    def time_func(func, name, *args, **kwargs):
+        # 预热
+        for _ in range(5):
+            func(*args, **kwargs)
         torch.cuda.synchronize()
-        result_val = data_race.item()
-        results[result_val] = results.get(result_val, 0) + 1
+        
+        # 计时
+        start = time.time()
+        for _ in range(50):
+            func(*args, **kwargs)
+        torch.cuda.synchronize()
+        ms = (time.time() - start) / 50 * 1000
+        print(f"{name:<60} | Time: {ms:.3f} ms")
+        return ms
+
+    print("\n--- Benchmark Results ---")
     
-    print(f"预期串行结果: 4.0 (mul->add) 或 6.0 (add->mul)")
-    print(f"预期并发竞争结果: 2.0 (add wins write) 或 3.0 (mul wins write)")
-    print(f"{num_runs}次运行的实际结果分布: {results}")
-    print("如果结果中出现了 2.0 或 3.0，就最终证明了数据竞争。\n")
+    # 测试 1: 4个 chunk 全是稀疏
+    time_func(flash_attn_func, 
+              f"1. All Sparse Normal Attn (Q:{tuple(q_all_sparse.shape)})", 
+              q_all_sparse, k_valid, v_valid)
 
-    # --- 场景4 (修正) - Kept for completeness ---
-    print("--- 场景4 (修正): 任务的乱序完成 ---")
-    data_A = torch.randn(1024, 1024, device=device)
-    data_B = torch.randn(256, 256, device=device)
-    iterations_A = 20
-    iterations_B = 20
-    start_event = torch.cuda.Event(enable_timing=True)
-    s1_end_event = torch.cuda.Event(enable_timing=True)
-    s2_end_event = torch.cuda.Event(enable_timing=True)
-    torch.cuda.synchronize() # Warmup and sync
-    start_event.record()
-    with torch.cuda.stream(stream1):
-        stream1.wait_event(start_event)
-        gpu_busy_work(data_A, iterations=iterations_A)
-        s1_end_event.record()
-    with torch.cuda.stream(stream2):
-        stream2.wait_event(start_event)
-        gpu_busy_work(data_B, iterations=iterations_B)
-        s2_end_event.record()
-    torch.cuda.synchronize()
-    s1_time = start_event.elapsed_time(s1_end_event)
-    s2_time = start_event.elapsed_time(s2_end_event)
-    print("\n--- 计时结果 ---")
-    print(f"Stream 1 ('长'任务) 完成耗时: {s1_time:.2f} ms")
-    print(f"Stream 2 ('短'任务) 完成耗时: {s2_time:.2f} ms")
-    if s2_time < s1_time:
-        print("\n结论: Stream 2 的任务在GPU上先完成了！这清晰地证明了CUDA流的异步和乱序执行能力。")
+    # 测试 2: 4个 chunk 全是全量
+    time_func(flash_attn_func, 
+              f"2. All Dense Normal Attn  (Q:{tuple(q_all_dense.shape)})", 
+              q_all_dense, k_valid, v_valid)
+
+    # 测试 3: 2个全量 + 2个稀疏 (Varlen 展平)
+    time_func(flash_attn_varlen_func, 
+              f"3. Varlen Packed (2 Dense + 2 Sparse, Q:{q_packed.shape[0]} tokens)", 
+              q_packed, k_packed, v_packed, 
+              cu_seqlens_q=cu_seqlens_q, cu_seqlens_k=cu_seqlens_k, 
+              max_seqlen_q=max_seqlen_q, max_seqlen_k=max_seqlen_k)
+
+    # 测试 4: 2个全量单独 + 2个稀疏单独
+    t_dense_half = time_func(flash_attn_func, 
+                             f"4a. Separate Dense Half  (Q:{tuple(q_dense_half.shape)})", 
+                             q_dense_half, k_valid_dense_half, v_valid_dense_half)
+    
+    t_sparse_half = time_func(flash_attn_func, 
+                              f"4b. Separate Sparse Half (Q:{tuple(q_sparse_half.shape)})", 
+                              q_sparse_half, k_valid_sparse_half, v_valid_sparse_half)
+    
+    print(f"{'4. Total time for separate calls (4a + 4b):':<60} | Time: {t_dense_half + t_sparse_half:.3f} ms")
+
+
+    # --- 正确性验证 ---
+    print("\n--- Correctness Verification (Test 3 vs Test 4) ---")
+
+    # 计算 Varlen 输出 (Test 3)
+    out_packed = flash_attn_varlen_func(
+        q_packed, k_packed, v_packed, 
+        cu_seqlens_q=cu_seqlens_q, cu_seqlens_k=cu_seqlens_k, 
+        max_seqlen_q=max_seqlen_q, max_seqlen_k=max_seqlen_k
+    )
+
+    # 计算分离调用的输出 (Test 4)
+    out_dense_half = flash_attn_func(q_dense_half, k_valid_dense_half, v_valid_dense_half)
+    out_sparse_half = flash_attn_func(q_sparse_half, k_valid_sparse_half, v_valid_sparse_half)
+
+    # 将分离计算的结果拼接成一个扁平张量，以对齐 varlen 的输出格式
+    out_separate_reconstructed = torch.cat([
+        out_dense_half.reshape(-1, H, D),
+        out_sparse_half.reshape(-1, H, D)
+    ], dim=0)
+    
+    is_close = torch.allclose(out_packed, out_separate_reconstructed, atol=1e-2, rtol=1e-2)
+    print(f"  - Varlen output shape:       {out_packed.shape}")
+    print(f"  - Reconstructed output shape:{out_separate_reconstructed.shape}")
+    print(f"  - Are they numerically close? -> {is_close}")
+    
+    if not is_close:
+        print("Max diff:", torch.max(torch.abs(out_packed - out_separate_reconstructed)))
     else:
-        print("\n结论: 在此运行中，Stream 2 并未比 Stream 1 更快完成。")
+        print("\nVerification passed! Varlen packing computes the exact same result as separate calls.")
 
-# 运行最终的演示
-demonstrate_stream_sync_final()
+if __name__ == "__main__":
+    benchmark_and_verify()

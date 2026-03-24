@@ -11,22 +11,6 @@ import argparse
 from gmflow.geometry import flow_warp
 import torchvision.transforms.functional as TF
 
-def calculate_psnr(img1: torch.Tensor, img2: torch.Tensor, max_val: float = 1.0) -> float:
-    """
-    计算两张图像之间的峰值信噪比 (PSNR)。
-    假设输入张量的范围是 [-1, 1]。
-    """
-    # 将图像范围从 [-1, 1] 转换为 [0, 1] 以进行标准 PSNR 计算
-    img1 = (img1 * 0.5 + 0.5).clamp(0, 1)
-    img2 = (img2 * 0.5 + 0.5).clamp(0, 1)
-    
-    mse = torch.mean((img1 - img2) ** 2)
-    if mse == 0:
-        return float('inf')
-    
-    psnr = 20 * torch.log10(max_val / torch.sqrt(mse))
-    return psnr.item()
-
 # --- 修改点 1: 导入 X265MVWrapper ---
 # 我们不再直接使用 X265NativeWrapper，而是通过它的父类来调用
 # 这样我们就可以通过参数选择使用哪个后端
@@ -159,15 +143,10 @@ def run_verification_and_save_images(source_tensor: torch.Tensor, target_tensor:
         #     ref_frame_tensor=source_tensor,
         #     current_frame_tensor=target_tensor,
         # )
-        # print(source_tensor.shape)
         params={}
-        # params["size"]=f"{source_tensor.shape[3]}x{source_tensor.shape[2]}"
-        # params["frame_rate"]=25.0
-        # params["crf"]=23
-        # params["preset"]="fast"
         params["stage"]="encode"
         # params["frame_rate"]=25.0
-        flow_computer=X265MVWrapper(device=device,native_x265=True)
+        flow_computer=X265MVWrapper(device=device,native_x265=False)
         import time
         start_time=time.time()
         forward_flow, backward_flow = flow_computer.compute_flow_from_tensors(
@@ -175,16 +154,6 @@ def run_verification_and_save_images(source_tensor: torch.Tensor, target_tensor:
             current_frame_tensor=target_tensor,
             **params
         )
-        # forward_flow, backward_flow = flow_computer.compute_flow_from_tensors(
-        #     ref_frame_tensor=source_tensor,
-        #     current_frame_tensor=target_tensor,
-        #     **params
-        # )
-        # forward_flow, backward_flow = flow_computer.compute_flow_from_tensors(
-        #     ref_frame_tensor=source_tensor,
-        #     current_frame_tensor=target_tensor,
-        #     **params
-        # )
         end_time=time.time()
         print(f"光流计算时间: {end_time - start_time:.2f} 秒")
     except Exception as e:
@@ -224,22 +193,20 @@ def run_verification_and_save_images(source_tensor: torch.Tensor, target_tensor:
 
     print("\n[步骤 5] 正在执行 Warp 操作并计算误差...")
     
-    warp_s_bwd = flow_warp(source_tensor.float(), backward_flow.float())
-    psnr_s_bwd = calculate_psnr(warp_s_bwd, target_tensor)
+    warp_s_bwd = flow_warp(source_tensor, backward_flow)
     mae_s_bwd = torch.mean(torch.abs(warp_s_bwd - target_tensor)).item()
     diff_s_bwd = torch.abs(warp_s_bwd - target_tensor)
     save_image(warp_s_bwd * 0.5 + 0.5, os.path.join(output_dir, "05_CORRECT_warp(source, bwd_flow).png"))
     save_image(diff_s_bwd, os.path.join(output_dir, "06_diff_vs_target.png"))
     print("Debug:",f"source tensor mean={torch.mean(source_tensor).item():.6f}, target tensor mean={torch.mean(target_tensor).item():.6f},warp_s_bwd mean={torch.mean(warp_s_bwd).item():.6f},forward flow mean={torch.mean(forward_flow).item():.6f}, backward flow mean={torch.mean(backward_flow).item():.6f}")
-    print(f"  - 正确用法 1 (Warp(S, Bwd)): MAE vs Target = {mae_s_bwd:.6f}, PSNR = {psnr_s_bwd:.2f} dB")
+    print(f"  - 正确用法 1 (Warp(S, Bwd)): MAE vs Target = {mae_s_bwd:.6f}")
 
     warp_t_fwd = flow_warp(target_tensor, forward_flow)
-    psnr_t_fwd = calculate_psnr(warp_t_fwd, source_tensor)
     mae_t_fwd = torch.mean(torch.abs(warp_t_fwd - source_tensor)).item()
     diff_t_fwd = torch.abs(warp_t_fwd - source_tensor)
     save_image(warp_t_fwd * 0.5 + 0.5, os.path.join(output_dir, "07_CORRECT_warp(target, fwd_flow).png"))
     save_image(diff_t_fwd, os.path.join(output_dir, "08_diff_vs_source.png"))
-    print(f"  - 正确用法 2 (Warp(T, Fwd)): MAE vs Source = {mae_t_fwd:.6f}, PSNR = {psnr_t_fwd:.2f} dB")
+    print(f"  - 正确用法 2 (Warp(T, Fwd)): MAE vs Source = {mae_t_fwd:.6f}")
     
     print(f"\n--- 结论 ---")
     print("脚本已运行完毕。")
@@ -293,7 +260,6 @@ def load_pngs_as_tensors(source_path: str, target_path: str) -> tuple[torch.Tens
         
         # 将图片从 0-255 (uint8) 转换为 -1 到 1 (float32) 的 Tensor
         # 流程: HWC (Numpy) -> CHW (Tensor) -> Add Batch dim -> Normalize
-        print(image_rgb.shape,image_rgb.dtype)
         image_tensor = (torch.from_numpy(image_rgb.astype(np.float32)).permute(2, 0, 1) / 127.5) - 1.0
         tensors.append(image_tensor.unsqueeze(0))
 
