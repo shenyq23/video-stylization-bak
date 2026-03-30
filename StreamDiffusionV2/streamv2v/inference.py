@@ -50,12 +50,15 @@ import json
 import urllib.request
 from typing import Optional
 
+import random
 import torchvision
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from einops import rearrange
-import torch.nn.functional as F
+from gmflow.geometry import flow_warp as universal_flow_warp
 
+from deps.sige3d.torch_kernels.backend import set_kernel_backend
+from utils.vae_utils.mem_stats import collect_scatter_cache_modules, feat_map_nbytes, format_bytes, scatter_cache_nbytes
 from utils.optical_wrapper import GMFlowWrapper, RAFTFlowWrapper, OcclusionComputation, X265MVWrapper, X265MVWrapper, OcclusionComputation
 from utils.vae_utils.mask_utils import (
     build_gather_block_masks,
@@ -64,16 +67,11 @@ from utils.vae_utils.mask_utils import (
     reduce_mask,
     resolve_mask_for_res,
 )
-from utils.vae_utils.mem_stats import collect_scatter_cache_modules, feat_map_nbytes, format_bytes, scatter_cache_nbytes
-
-from deps.sige3d.torch_kernels.backend import set_kernel_backend
-
-from debugUtil import enable_custom_repr
-enable_custom_repr()
 
 LOG_HANDLERS = None
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 LOG_DATEFMT = '%Y-%m-%d %H:%M:%S'
+
 
 def configure_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger(name)
@@ -87,7 +85,7 @@ def configure_logger(name: str, level: int = logging.INFO) -> logging.Logger:
             logger.addHandler(handler)
     return logger
 
-import random
+
 def set_seed(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)
@@ -97,6 +95,7 @@ def set_seed(seed: int = 42):
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
 
 class DotDict(dict):
     __getattr__ = dict.__getitem__
@@ -160,11 +159,7 @@ def build_taehv_vae(device: torch.device, dtype: torch.dtype = torch.float16) ->
     vae.requires_grad_(False)
     vae.to(device=device, dtype=dtype)
     return vae
-from gmflow.geometry import flow_warp as universal_flow_warp
-import json
 
-import torch
-import torch.nn.functional as F
 
 def normalize_map(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     # x: [B,1,H,W]
@@ -222,13 +217,13 @@ class OpticalFlowCalculator:
                  top_k_percentage: float=(0.1,0.1),
                  morph_kernel_size: int = 7,
                  conn_comp_threshold_quantile: float = 0.75
-                ):
+                 ):
         self.device = device
         self.logger = logging.getLogger("OpticalFlowCalculator")
         self.x265_params = x265_params or {}
         self.flow_model_type = flow_model_type
         self.occlusion_method = occlusion_method
-        self.top_k_percentage=top_k_percentage
+        self.top_k_percentage = top_k_percentage
         self.morph_kernel_size = morph_kernel_size
         self.conn_comp_threshold_quantile = conn_comp_threshold_quantile
 
@@ -240,19 +235,22 @@ class OpticalFlowCalculator:
             return
 
         self.logger.info(f"Initializing optical flow model: {flow_model_type}")
-        FlowModel = {"gmflow": GMFlowWrapper, "raft": RAFTFlowWrapper, "x265": X265MVWrapper}.get(flow_model_type.lower())
+        FlowModel = {"gmflow": GMFlowWrapper, "raft": RAFTFlowWrapper,
+                     "x265": X265MVWrapper}.get(flow_model_type.lower())
         if FlowModel is None:
             raise ValueError(f"Unsupported flow model type: {flow_model_type}")
 
-        if flow_model_type=="x265": self.model = FlowModel(str(self.device),native_x265=True)
-        else: self.model = FlowModel(str(self.device))
+        if flow_model_type == "x265":
+            self.model = FlowModel(str(self.device), native_x265=True)
+        else:
+            self.model = FlowModel(str(self.device))
 
         if self.flow_model_type.lower() == 'x265':
-             self.logger.info("Using 'luminosity' occlusion for x265.")
-             self.occlusion_computer = OcclusionComputation(use_luminosity=True)
+            self.logger.info("Using 'luminosity' occlusion for x265.")
+            self.occlusion_computer = OcclusionComputation(use_luminosity=True)
         else:
-             self.logger.info("Using 'geometry' occlusion for DL models.")
-             self.occlusion_computer = OcclusionComputation(use_geometry=True)
+            self.logger.info("Using 'geometry' occlusion for DL models.")
+            self.occlusion_computer = OcclusionComputation(use_geometry=True)
 
         self.bwd_occ_avg=None
         # from ultralytics import YOLO
@@ -320,7 +318,8 @@ class OpticalFlowCalculator:
                 target_area = H * W * self.top_k_percentage[1]
                 covered_area = 0
                 for region in region_scores:
-                    if covered_area >= target_area: break
+                    if covered_area >= target_area:
+                        break
                     region_mask_np = (labels_im == region['id'])
                     final_mask_np[region_mask_np] = True
                     covered_area += region['area']
@@ -337,35 +336,28 @@ class OpticalFlowCalculator:
             final_masks.append(binary_mask)
 
         return torch.stack(final_masks, dim=0).unsqueeze(1)
-    
+
     def get_foreground_mask(self, frame_tensor: torch.Tensor) -> torch.Tensor:
         """
         输入: [1, 3, H, W] 范围 [-1, 1] 的张量
         输出: [1, 1, H, W] 范围 [0, 1] 的二值掩码
         """
-        # 1. 预处理：将 [-1, 1] 转为 YOLO 需要的 [0, 255] uint8 或 [0, 1] float
         img_for_seg = (frame_tensor * 0.5 + 0.5).clamp(0, 1)
-        
-        # 2. 推理：设置 imgsz 减小分辨率可以进一步提速 (例如 320 或 640)
-        # conf=0.25 过滤低置信度，classes=[14] 如果只想锁定“鸟”(COCO中鸟是14)
-        # 如果想锁定所有移动物体，可以不设 classes
         results = self.seg_model.predict(img_for_seg, conf=0.25, verbose=True)
-        
+
         _, _, H, W = frame_tensor.shape
         mask_out = torch.zeros((1, 1, H, W), device=self.device)
 
         if results[0].masks is not None:
-            # 合并当前帧所有检测到的物体掩码
-            # results[0].masks.data 是 [N, H, W]
             combined_mask = torch.any(results[0].masks.data, dim=0).float()
-            # 缩放到原始尺寸 (YOLO 内部可能会 resize)
-            mask_out = F.interpolate(combined_mask.unsqueeze(0).unsqueeze(0), 
+            mask_out = F.interpolate(combined_mask.unsqueeze(0).unsqueeze(0),
                                      size=(H, W), mode='nearest')
-        
+
         return mask_out
 
     def calculate_flow(self, ref_frame: torch.Tensor, current_frame: torch.Tensor) -> tuple | None:
-        if self.model is None: return None
+        if self.model is None:
+            return None
 
         if (self.flow_model_type == "x265"):
             # print(self.x265_params)
@@ -378,7 +370,7 @@ class OpticalFlowCalculator:
             fwd_flow, bwd_flow = self.model.compute_flow_from_tensors(ref_frame, current_frame)
 
         ####修改1. 把occ改成flow的模长
-        
+
         _, bwd_occ_geom = self.occlusion_computer(ref_frame, current_frame, fwd_flow, bwd_flow)
         if bwd_occ_geom.dim() == 3:
             bwd_occ_geom = bwd_occ_geom.unsqueeze(1)
@@ -414,11 +406,12 @@ class OpticalFlowCalculator:
             self.bwd_occ_avg=0.5*self.bwd_occ_avg+0.5*bwd_occ
         return bwd_flow,self.bwd_occ_avg
 
-        # 
+        #
 
         # 最终的 bwd_occ 是一个浮点分布图，它结合了两种方法的优点
         # 后续的 compute_binary_occlusion_mask 会从这个更优的分布中选取 top_k_percentage
         return bwd_flow, bwd_occ
+
 
 def tensor_to_np_img(tensor: torch.Tensor) -> np.ndarray:
     """Converts a [-1, 1] or [0, 1] image tensor to a [0, 255] uint8 RGB numpy array."""
@@ -431,6 +424,7 @@ def tensor_to_np_img(tensor: torch.Tensor) -> np.ndarray:
 
     np_img = tensor.permute(1, 2, 0).contiguous().cpu().numpy()
     return (np_img * 255).astype(np.uint8)
+
 
 def visualize_latent_to_image(latent: torch.Tensor) -> np.ndarray:
     """Visualizes a latent tensor by taking the mean across channels and normalizing."""
@@ -447,6 +441,7 @@ def visualize_latent_to_image(latent: torch.Tensor) -> np.ndarray:
     img_np = (latent_norm.float().cpu().numpy() * 255).astype(np.uint8)
     return cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
 
+
 def visualize_flow_to_rgb(flow: torch.Tensor, vector_stride: int = 20) -> np.ndarray:
     """
     Visualizes an optical flow tensor by drawing arrows on a black background.
@@ -457,7 +452,7 @@ def visualize_flow_to_rgb(flow: torch.Tensor, vector_stride: int = 20) -> np.nda
     B, _, H, W = flow.shape
     flow_canvas = np.zeros((H, W, 3), dtype=np.uint8)
     flow_np = flow.squeeze(0).permute(1, 2, 0).cpu().numpy()
-    arrow_color = (0, 255, 0) # Green in BGR
+    arrow_color = (0, 255, 0)  # Green in BGR
 
     for y in range(vector_stride // 2, H, vector_stride):
         for x in range(vector_stride // 2, W, vector_stride):
@@ -469,6 +464,7 @@ def visualize_flow_to_rgb(flow: torch.Tensor, vector_stride: int = 20) -> np.nda
             cv2.arrowedLine(flow_canvas, start_point, end_point, arrow_color, 1, tipLength=0.3)
 
     return cv2.cvtColor(flow_canvas, cv2.COLOR_BGR2RGB)
+
 
 def overlay_flow_on_image(image: np.ndarray, flow_viz: np.ndarray) -> np.ndarray:
     """
@@ -490,6 +486,7 @@ def overlay_flow_on_image(image: np.ndarray, flow_viz: np.ndarray) -> np.ndarray
     overlayed_image = cv2.add(image, cv2.cvtColor(flow_viz, cv2.COLOR_RGB2BGR))
     return overlayed_image
     return cv2.cvtColor(overlayed_image, cv2.COLOR_BGR2RGB)
+
 
 def visualize_flow_with_source_overlay(
     source_image: np.ndarray,
@@ -537,13 +534,14 @@ def visualize_flow_with_source_overlay(
 
     return composite_rgb
 
+
 def load_mp4_as_tensor(
     video_path: str,
     max_frames: int = None,
     resize_hw: tuple[int, int] = None,
     normalize: bool = True,
     device: str = 'cuda:0',
-) -> tuple[torch.Tensor, int]: # <--- 修改: 更新返回类型提示
+) -> tuple[torch.Tensor, int]:  # <--- 修改: 更新返回类型提示
     assert os.path.exists(video_path), f"Video file not found: {video_path}"
     # <--- 修改: 捕获第三个返回值 info，其中包含元数据
     video, _, info = torchvision.io.read_video(video_path, output_format="TCHW", pts_unit="sec")
@@ -564,16 +562,44 @@ def load_mp4_as_tensor(
     if normalize:
         video = video / 127.5 - 1.0
 
-    return video, original_fps # <--- 修改: 返回视频张量和原始FPS
+    return video, original_fps  # <--- 修改: 返回视频张量和原始FPS
 
-def compute_noise_scale_and_step(input_video_original: torch.Tensor, end_idx: int, chunk_size: int, noise_scale: float, init_noise_scale: float):
-    l2_dist=(input_video_original[:,:,end_idx-chunk_size:end_idx]-input_video_original[:,:,end_idx-chunk_size-1:end_idx-1])**2
-    l2_dist = (torch.sqrt(l2_dist.mean(dim=(0,1,3,4))).max()/0.2).clamp(0,1)
+
+def compute_noise_scale_and_step(input_video_original: torch.Tensor, end_idx: int, chunk_size: int, noise_scale: float, init_noise_scale: float,
+                                  frame_indices: list = None):
+    """计算 noise scale 和 denoising step。
+
+    Args:
+        frame_indices: 当非 None 时，使用这些索引对应的帧计算 L2 距离（FRUC 模式下传入 hot_indices）。
+                       为 None 时退回到原来的连续切片逻辑。
+    """
+    if frame_indices is not None and len(frame_indices) >= 2:
+        # FRUC 模式：用实际送入 DiT 的帧（间隔帧）计算运动量
+        frames = input_video_original[:, :, frame_indices]  # [B,C,T,H,W]
+        l2_dist = (frames[:, :, 1:] - frames[:, :, :-1])**2
+    else:
+        l2_dist = (input_video_original[:, :, end_idx-chunk_size:end_idx] -
+                   input_video_original[:, :, end_idx-chunk_size-1:end_idx-1])**2
+    l2_dist = (torch.sqrt(l2_dist.mean(dim=(0, 1, 3, 4))).max()/0.2).clamp(0, 1)
     new_noise_scale = (init_noise_scale-0.1*l2_dist.item())*0.9+noise_scale*0.1
     current_step = int(1000*new_noise_scale)-100
     return new_noise_scale, current_step
 
+
+# --- Import FRUC Interpolator (FFmpeg minterpolate, open-source replacement for kfruc) ---
+try:
+    from streamv2v.ffmpeg_fruc_interpolator import FFmpegFRUCInterpolator, FFMPEG_FRUC_AVAILABLE
+    KFRUC_AVAILABLE = FFMPEG_FRUC_AVAILABLE
+    if not FFMPEG_FRUC_AVAILABLE:
+        logging.warning("[FRUC] ffmpeg found but minterpolate filter unavailable. Upgrade ffmpeg.")
+except ImportError:
+    KFRUC_AVAILABLE = False
+    FFmpegFRUCInterpolator = None
+    logging.warning("[FRUC] FFmpegFRUCInterpolator not available. Install ffmpeg to enable FRUC.")
+
 # --- SingleGPUInferencePipeline class (Logging format updated) ---
+
+
 class SingleGPUInferencePipeline:
     def __init__(self, config, device: torch.device, cache_min_downsample: int = 0, use_cached_text_embedding: bool = False):
         self.config = config
@@ -584,13 +610,15 @@ class SingleGPUInferencePipeline:
         if not self.logger.handlers:
             handler = logging.StreamHandler()
             # Updated formatter to match target log
-            formatter = logging.Formatter('%(asctime)s,%(msecs)03d - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+            formatter = logging.Formatter(
+                '%(asctime)s,%(msecs)03d - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
 
         self.logger.info("Initializing CausalStreamInferencePipeline...")
         # <--- MODIFIED LINE: Pass the new argument to the pipeline --->
-        self.pipeline = CausalStreamInferencePipeline(config, device=str(device), text_encoder_on_cpu=True, cache_min_downsample=cache_min_downsample, use_cached_text_embedding=use_cached_text_embedding)
+        self.pipeline = CausalStreamInferencePipeline(config, device=str(
+            device), text_encoder_on_cpu=True, cache_min_downsample=cache_min_downsample, use_cached_text_embedding=use_cached_text_embedding)
         self.pipeline.to(device=str(device), dtype=torch.float16)
         self.vae_encoder = self.pipeline.vae
         self.vae_decoder = self.pipeline.vae
@@ -633,8 +661,10 @@ class SingleGPUInferencePipeline:
         )
 
 # --- Optimized ParallelInferenceOrchestrator (Logging format updated) ---
+
+
 class ParallelInferenceOrchestrator:
-    def __init__(self, pipeline_manager: SingleGPUInferencePipeline):
+    def __init__(self, pipeline_manager: SingleGPUInferencePipeline, enable_kfruc: bool = False, kfruc_rate: int = 2):
         self.pipeline_manager = pipeline_manager
         self.pipeline = pipeline_manager.pipeline
         self.device = pipeline_manager.device
@@ -645,10 +675,25 @@ class ParallelInferenceOrchestrator:
 
         self.data_queue = queue.Queue(maxsize=5)
         self.save_queue = queue.Queue()
+        self.fruc_queue = queue.Queue()  # fruc_thread 输入队列（无界，避免背压阻塞 consumer/DiT）
         self.producer_thread = None
         self.saver_thread = None
+        self.fruc_thread = None
         self.processed = 0
         self.producer_error = None
+
+        # FRUC (Frame Rate Up-Conversion) via FFmpeg minterpolate
+        self.kfruc_rate = kfruc_rate
+        self.kfruc = None
+        if enable_kfruc and KFRUC_AVAILABLE:
+            self.enable_kfruc = True
+            self.kfruc = FFmpegFRUCInterpolator(preset="balanced")
+            self.logger.info(f"[FRUC] Enabled with rate={kfruc_rate}x (FFmpeg minterpolate)")
+        elif enable_kfruc and not KFRUC_AVAILABLE:
+            self.enable_kfruc = False
+            self.logger.warning("[FRUC] Requested but FFmpeg minterpolate not available. Disable FRUC.")
+        else:
+            self.enable_kfruc = False
 
     def _producer_task_wrapper(self, *args, **kwargs):
         try:
@@ -687,7 +732,7 @@ class ParallelInferenceOrchestrator:
 
     def _stream_decode_to_pixel(self, latents: torch.Tensor, mask: torch.Tensor, flow: torch.Tensor):
         return self.pipeline_manager.vae_decoder.stream_decode_to_pixel(latents, mask, flow)
-        self.prev_latent=None
+        self.prev_latent = None
 
     def _producer_task(self, input_video_original: torch.Tensor,
                        flow_calculator: OpticalFlowCalculator,
@@ -699,11 +744,19 @@ class ParallelInferenceOrchestrator:
         # torch.cuda.synchronize(device=self.device)
         # mem_producer_start = torch.cuda.memory_reserved(device=self.device)
 
+        # 当 FRUC 启用时，Producer 按 kfruc_rate 间隔采样输入帧（隔帧塞入 DiT）：
+        # DiT 只处理每 kfruc_rate 帧中的 1 帧，FRUC 在并行线程把缺失帧补回来。
+        # 例如 kfruc_rate=2: 原始帧 0,1,2,...,7 → 只取 0,2,4,6（4帧）送入 DiT
+        # FRUC 把 [f0,f2,f4,f6] 插帧得到 [f0,f1,f2,f3,f4,f5,f6,f7]（8帧），
+        # 与原始帧数对应，输出帧率不变。
+        fruc_stride = self.kfruc_rate if self.enable_kfruc else 1
+
         is_realtime_sim = fps_generate > 0
         chunk_interval_seconds = 0
         if is_realtime_sim:
             chunk_interval_seconds = chunk_size / fps_generate
-            self.logger.info(f"Real-time simulation enabled: Target Producer FPS={fps_generate}, Chunk Size={chunk_size}, Target Interval={chunk_interval_seconds:.4f}s")
+            self.logger.info(
+                f"Real-time simulation enabled: Target Producer FPS={fps_generate}, Chunk Size={chunk_size}, Target Interval={chunk_interval_seconds:.4f}s")
 
         # 用于维持稳定生产速率的时间锚点
         next_chunk_submit_time = time.time()
@@ -714,28 +767,31 @@ class ParallelInferenceOrchestrator:
 
         with torch.cuda.stream(self.producer_stream):
             # --- 1. 为"冷启动" / prepare() 调用生产数据 ---
-            start_idx, end_idx = 0, 5
+            # 冷启动固定取前 5 帧（间隔采样：0, s, 2s, 3s, 4s，s=fruc_stride）
+            cold_indices = [i * fruc_stride for i in range(5)]
+            start_idx, end_idx = 0, cold_indices[-1] + fruc_stride
 
             prod_end_event = torch.cuda.Event(enable_timing=True)
 
             if input_video_original is not None:
-                inp = input_video_original[:, :, start_idx:end_idx].to(self.device, non_blocking=True)
+                inp = input_video_original[:, :, cold_indices].to(self.device, non_blocking=True)
                 latents = self._stream_encode(inp, None, None, is_nocache)
                 latents = latents.transpose(2, 1).contiguous()
                 noise = torch.randn_like(latents)
                 noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
             else:
-                noisy_latents = torch.randn(1, 1 + self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.float16)
+                noisy_latents = torch.randn(1, 1 + self.pipeline.num_frame_per_block, 16,
+                                            self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.float16)
 
             prod_end_event.record()
             self.data_queue.put((noisy_latents, None, None, prod_end_event, "Initial"))
-            self.logger.info(f"Producer: Initial 5-frame data block placed in queue.{time.time()-next_chunk_submit_time}")
-
+            self.logger.info(
+                f"Producer: Initial 5-frame data block placed in queue.{time.time()-next_chunk_submit_time}")
 
             # --- 2. 为"热循环"生产数据 ---
             init_noise_scale = noise_scale
             total_hot_chunks = num_chunks + num_steps - 1
-            ref_frame_idx = 4
+            ref_frame_idx = cold_indices[-1]  # 光流参考帧：冷启动最后一帧的原始索引
             for i in range(total_hot_chunks):
                 # --- [修正后] 的 FPS 节流逻辑 ---
                 if is_realtime_sim:
@@ -752,13 +808,15 @@ class ParallelInferenceOrchestrator:
                         self.logger.warning(f"Producer is lagging behind real-time schedule by {-sleep_needed:.4f}s")
 
                 chunk_id = i + 1
-                start_idx = end_idx
-                end_idx += chunk_size
+                # 每个 hot chunk 取 chunk_size 帧，间隔 fruc_stride
+                # end_idx 是下一个 chunk 第一帧的原始索引（与上一个 chunk 末帧间距保持 fruc_stride）
+                hot_indices = [end_idx + j * fruc_stride for j in range(chunk_size)]
+                end_idx = hot_indices[-1] + fruc_stride
                 prod_end_event = torch.cuda.Event(enable_timing=True)
                 flow_data = None
-                if input_video_original is not None and end_idx <= input_video_original.shape[2]:
-                    inp = input_video_original[:, :, start_idx:end_idx].to(self.device)
-                    cur_frame_idx = end_idx - 1
+                if input_video_original is not None and hot_indices[-1] < input_video_original.shape[2]:
+                    inp = input_video_original[:, :, hot_indices].to(self.device)
+                    cur_frame_idx = hot_indices[-1]
 
                     self.logger.info(f"Chunk {chunk_id}: calculating flow Frame {ref_frame_idx} -> {cur_frame_idx}")
                     ref_frame_tensor = input_video_original[:, :, ref_frame_idx].to(self.device, torch.float32)
@@ -768,7 +826,7 @@ class ParallelInferenceOrchestrator:
                     bwd_flow, bwd_occ = flow_data
 
                     # print(latents.shape,bwd_flow.shape,bwd_occ.shape)
-                
+
                     if occlusion_method == "gather_block":
                         masks_enc = build_gather_block_masks(bwd_occ.squeeze(0).squeeze(0), top_k_percentage=top_k_percentage[0])
                     else:
@@ -779,6 +837,7 @@ class ParallelInferenceOrchestrator:
                             min_res=tuple(min_res),
                             dilation=int(mask_dilate),
                         )
+
                     ref_frame_idx = cur_frame_idx
 
                     # start_event = torch.cuda.Event(enable_timing=True)
@@ -787,7 +846,7 @@ class ParallelInferenceOrchestrator:
                     # start_event.record()
 
                     latents = self._stream_encode(inp, mask=masks_enc, flow=bwd_flow.squeeze(0).permute(1, 2, 0).contiguous(),is_nocache=is_nocache)
-                    
+
                     # end_event.record()
                     # torch.cuda.synchronize()
                     # elapsed_time_ms = start_event.elapsed_time(end_event)
@@ -796,7 +855,7 @@ class ParallelInferenceOrchestrator:
                     latents = latents.transpose(2, 1).contiguous()
 
                     noise_scale, current_step = compute_noise_scale_and_step(
-                        input_video_original, end_idx, chunk_size, noise_scale, init_noise_scale
+                        input_video_original, end_idx, chunk_size, noise_scale, init_noise_scale,
                     )
                     noise = torch.randn_like(latents)
                     noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
@@ -815,7 +874,7 @@ class ParallelInferenceOrchestrator:
                     latent_binary_mask_half = flow_calculator.compute_binary_occlusion_mask(downsampled_occ_half)
                     flow_data= (downsampled_flow,latent_binary_mask,latent_binary_mask_half)
 
-                    # if (flow_data!=None): 
+                    # if (flow_data!=None):
                     #     warped_frame = universal_flow_warp(ref_frame_tensor, bwd_flow)
                     #     viz_frame_n = tensor_to_np_img(ref_frame_tensor)
                     #     viz_frame_n1 = tensor_to_np_img(cur_frame_tensor)
@@ -841,12 +900,13 @@ class ParallelInferenceOrchestrator:
 
 
                 else:
-                    noisy_latents = torch.randn(1, self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.float16)
+                    noisy_latents = torch.randn(1, self.pipeline.num_frame_per_block, 16, self.pipeline.height,
+                                                self.pipeline.width, device=self.device, dtype=torch.float16)
                     current_step = None
 
                 prod_end_event.record()
                 self.data_queue.put((noisy_latents, current_step, flow_data, prod_end_event, chunk_id))
-                
+
                 if chunk_id <= num_chunks:
                     self.logger.info(f"Producer: Real data chunk {chunk_id}/{num_chunks} placed in queue. ")
                     self.logger.info(f"Queue len: {self.data_queue.qsize()}")
@@ -857,10 +917,79 @@ class ParallelInferenceOrchestrator:
 
         self.logger.info("Producer thread finished. All data blocks produced.")
 
+    def _fruc_task(self):
+        """FRUC 线程：从 fruc_queue 取帧，用 lookahead 方式插帧后送入 save_queue。
+
+        关键设计：lookahead tail 模式
+        ───────────────────────────────
+        minterpolate 依赖前后帧做运动估计。仅输入当前 chunk（4帧）时，末帧没有后续
+        参考，导致最后一个时间间隔的插帧被截断（4帧输入只输出 5 帧而非 8 帧）。
+
+        解法：把下一个 chunk 的第一帧拼到当前 chunk 尾部（tail lookahead），让
+        minterpolate 有完整的运动窗口，再把多余的最后 kfruc_rate 帧（属于下一
+        chunk 的过渡区）截掉。每个 chunk 精确输出 chunk_size * kfruc_rate 帧。
+
+        帧流示意（kfruc_rate=2, chunk_size=4, fruc_stride=2）：
+          DiT 输出:  [f0,f2,f4,f6]        [f8,f10,f12,f14]     ...
+          第1chunk:  frames=[f0,f2,f4,f6], tail=f8
+                     输入 minterpolate: [f0,f2,f4,f6 | f8]（5帧）
+                     输出 10 帧，取前 8 帧: [f0,f1, f2,f3, f4,f5, f6,f7]
+          第2chunk:  frames=[f8,f10,f12,f14], tail=f16
+                     输入 minterpolate: [f8,f10,f12,f14 | f16]（5帧）
+                     输出 10 帧，取前 8 帧: [f8,f9, f10,f11, f12,f13, f14,f15]
+          最后chunk: 无 tail → fallback 到末帧复制，仍精确输出 chunk_size*kfruc_rate 帧
+        """
+        assert self.kfruc is not None, "_fruc_task started without a valid kfruc instance"
+        self.logger.info("FRUC thread started.")
+
+        # lookahead buffer: 先缓存当前 chunk，等下一个 chunk 到来后才处理
+        pending = None  # (video_tensor, index)
+
+        def process_one(video_tensor, index, tail_frame_np):
+            """插帧并送入 save_queue。tail_frame_np 为 None 时末尾用复制填充。"""
+            video_np = video_tensor.cpu().float().numpy()  # [T, H, W, 3]
+            t_fruc = time.perf_counter()
+            try:
+                video_np_out = self.kfruc.interpolate_chunk(video_np, tail_frame=tail_frame_np)
+            except Exception as e:
+                self.logger.error(f"[FRUC] interpolate_chunk failed: {e}, falling back")
+                # fallback: 简单帧复制到目标帧数
+                want = video_np.shape[0] * self.kfruc_rate
+                video_np_out = np.repeat(video_np, self.kfruc_rate, axis=0)[:want]
+            t_fruc = time.perf_counter() - t_fruc
+            n_in, n_out = video_np.shape[0], video_np_out.shape[0]
+            self.logger.info(f"[FRUC] {n_in} → {n_out} frames in {t_fruc:.3f}s")
+            video_out = torch.from_numpy(video_np_out)
+            self.save_queue.put((video_out.to('cpu', non_blocking=False), index))
+
+        while True:
+            item = self.fruc_queue.get()
+
+            if item is None:  # sentinel: 队列结束
+                self.logger.info("FRUC thread received termination signal.")
+                if pending is not None:
+                    # 最后一个 chunk 没有 lookahead tail，用 None（内部末帧复制填充）
+                    video_t, idx = pending
+                    process_one(video_t, idx, tail_frame_np=None)
+                    pending = None
+                break
+
+            video, index = item
+
+            if pending is not None:
+                # 用当前 chunk 的第一帧作为上一个 chunk 的 lookahead tail
+                prev_video, prev_index = pending
+                tail_np = video.cpu().float().numpy()[0]  # [H, W, 3]
+                process_one(prev_video, prev_index, tail_frame_np=tail_np)
+
+            pending = (video, index)
+
+        self.logger.info("FRUC thread finished.")
+
     def _saver_task(self, results_dict: dict):
         self.logger.info("Saver thread started.")
-        last_save_time=time.time()
-        chunk_size=4
+        last_save_time = time.time()
+        chunk_size = 4
         iteration_times = []
         while True:
             # Get data from the save queue
@@ -885,16 +1014,16 @@ class ParallelInferenceOrchestrator:
             last_save_time = current_time
             iteration_times.append(iter_time)
             iter_fps = chunk_size / iter_time
-            self.logger.info(f"Saver: Render Video Chunk for iter {index}, Iter Time: {iter_time:.4f}s, FPS: {iter_fps:.4f}")
+            self.logger.info(
+                f"Saver: Render Video Chunk for iter {index}, Iter Time: {iter_time:.4f}s, FPS: {iter_fps:.4f}")
 
         if iteration_times:
-            iteration_times=np.array(iteration_times)
-            iteration_times=iteration_times[1:]
+            iteration_times = np.array(iteration_times)
+            iteration_times = iteration_times[1:]
             avg_iter_time = np.mean(iteration_times)
             avg_fps = chunk_size / avg_iter_time
             self.logger.info(f"Average End-to-End FPS (Saver-side, after pipeline fill): {avg_fps:.4f}")
         self.logger.info("Saver thread finished.")
-
 
     def run_parallel_inference(
         self,
@@ -918,7 +1047,6 @@ class ParallelInferenceOrchestrator:
         # torch.cuda.synchronize(device=self.device)
         # mem_run_start = torch.cuda.memory_reserved(device=self.device)
 
-
         self.logger.info("Consumer started. Replicating original inference logic with detailed timing.")
         os.makedirs(output_folder, exist_ok=True)
 
@@ -927,18 +1055,18 @@ class ParallelInferenceOrchestrator:
         self.producer_thread = threading.Thread(
             target=self._producer_task_wrapper,
             args=(input_video_original,
-                    flow_calculator,
-                    num_chunks,
-                    chunk_size,
-                    noise_scale,
-                    num_steps,
-                    fps_generate,
-                    mask_dilate,
-                    min_res,
-                    occlusion_method,
-                    top_k_percentage,
-                    is_nocache,
-                )
+                  flow_calculator,
+                  num_chunks,
+                  chunk_size,
+                  noise_scale,
+                  num_steps,
+                  fps_generate,
+                  mask_dilate,
+                  min_res,
+                  occlusion_method,
+                  top_k_percentage,
+                  is_nocache,
+                  )
         )
         self.producer_thread.start()
 
@@ -946,9 +1074,26 @@ class ParallelInferenceOrchestrator:
         self.saver_thread = threading.Thread(target=self._saver_task, args=(results,))
         self.saver_thread.start()
 
+        # FRUC 独立线程：只在启用时启动，并提前初始化
+        if self.enable_kfruc and self.kfruc is not None and input_video_original is not None:
+            h = (input_video_original.shape[3] // 32) * 32
+            w = (input_video_original.shape[4] // 32) * 32
+            # input_fps = 原始视频帧率（FRUC 输出帧率 = input_fps，保持一致）
+            # interpolate_rate = kfruc_rate（每帧间距对应插出的帧数）
+            self.kfruc.initialize(
+                input_fps=float(fps) / self.kfruc_rate,   # DiT 输入帧率（间隔采样后）
+                interpolate_rate=self.kfruc_rate,
+                width=w, height=h,
+            )
+            self.fruc_thread = threading.Thread(target=self._fruc_task, daemon=True)
+            self.fruc_thread.start()
+            self.logger.info(
+                f"[FRUC] Thread started: DiT input {fps/self.kfruc_rate:.1f}fps "
+                f"-> output {fps:.1f}fps (keep same as source), {w}x{h}")
+
         # results, save_results = {}, 0
         iteration_times = []
-        save_results=0
+        save_results = 0
 
         current_start = 0
         current_end = self.pipeline.frame_seq_length * 2
@@ -988,7 +1133,7 @@ class ParallelInferenceOrchestrator:
             # mem_run_end = torch.cuda.memory_reserved(device=self.device)
             # print("GPU memory used by consumer during run(): ", (mem_run_end - mem_run_start)/1024/1024/1024, "GB","from",mem_run_start/1024/1024/1024,"GB to",mem_run_end/1024/1024/1024,"GB")
             # --- 4. Process "Hot Loop" data from the queue ---
-            last_save_time = time.time() # Initialize timer for first iteration
+            last_save_time = time.time()  # Initialize timer for first iteration
             while self.processed < num_chunks + num_steps - 1:
                 # iter_start_cpu = time.perf_counter()
                 # queue_start = time.perf_counter()
@@ -997,7 +1142,6 @@ class ParallelInferenceOrchestrator:
                 # print("*" * 40)
                 # print(f"Queue wait time: {queue_wait_s:.4f}s")
                 # print("*" * 40)
-
 
                 with torch.cuda.stream(self.consumer_stream):
                     self.consumer_stream.wait_event(producer_done_event)
@@ -1040,7 +1184,6 @@ class ParallelInferenceOrchestrator:
                         # elapsed_time_ms = start_event.elapsed_time(end_event)
                         # print(f"stream_decode GPU time: {elapsed_time_ms:.3f} ms")
 
-
                     self.processed += 1
 
                     print(
@@ -1050,20 +1193,22 @@ class ParallelInferenceOrchestrator:
                     if video_out is not None:
                         video = (video_out * 0.5 + 0.5).clamp(0, 1)
                         video = video[0].permute(0, 2, 3, 1).contiguous()
-                        self.save_queue.put((video.to('cpu', non_blocking=False), save_results))
 
-                        # video = (video_out * 0.5 + 0.5).clamp(0, 1)
-                        # video = video[0].permute(0, 2, 3, 1).contiguous()
-                        # results[save_results] = video.cpu().float().numpy()
+                        if self.enable_kfruc and self.kfruc is not None:
+                            # === FRUC: 异步送入 fruc_thread，不阻塞 consumer ===
+                            self.fruc_queue.put((video, save_results))
+                        else:
+                            self.save_queue.put((video.to('cpu', non_blocking=False), save_results))
 
-                        # --- NEW: Iteration Timing and Logging ---
+                        # --- Iteration Timing and Logging ---
                         current_time = time.time()
                         iter_time = current_time - last_save_time
                         last_save_time = current_time
                         iteration_times.append(iter_time)
                         iter_fps = chunk_size / iter_time
 
-                        self.logger.info(f"Consumer: Enqueued output for iter {save_results}, Iter Time: {iter_time:.4f}s, FPS: {iter_fps:.4f}")
+                        self.logger.info(
+                            f"Consumer: Enqueued output for iter {save_results}, Iter Time: {iter_time:.4f}s, FPS: {iter_fps:.4f}")
                         save_results += 1
 
                     # torch.cuda.synchronize(device=self.device)
@@ -1073,7 +1218,21 @@ class ParallelInferenceOrchestrator:
         finally:
             self.producer_thread.join()
 
-            self.save_queue.put(None) # Sentinel value
+            # fruc_thread 先收到 sentinel，处理完剩余帧后再让 saver 退出
+            if self.fruc_thread is not None:
+                self.fruc_queue.put(None)  # sentinel
+                self.fruc_thread.join()
+                self.logger.info("[FRUC] Thread joined.")
+
+            # === FRUC Cleanup ===
+            if self.enable_kfruc and self.kfruc is not None:
+                try:
+                    self.kfruc.cleanup()
+                    self.logger.info("[FRUC] Interpolator cleaned up")
+                except Exception as e:
+                    self.logger.error(f"[FRUC] Cleanup failed: {e}")
+
+            self.save_queue.put(None)  # Sentinel value
             self.saver_thread.join()
 
             self.logger.info("="*50)
@@ -1085,21 +1244,30 @@ class ParallelInferenceOrchestrator:
             video = np.concatenate(video_list, axis=0)
 
             print(f"Video shape before trimming: {video.shape}")
-            video = video[:input_video_original.shape[2]]
+            target_frames = input_video_original.shape[2]  # FRUC 保持原始帧数
+            video = video[:target_frames]
 
-            # --- NEW: Final FPS calculation based on actual iteration times ---
+            # Final FPS summary
             if iteration_times:
-                avg_iter_time = np.mean(iteration_times[1:])  # Modification: Skip the first iteration 
-                avg_fps = chunk_size / avg_iter_time
-                self.logger.info(f"Average End-to-End FPS (Consumer-side, after pipeline fill): {avg_fps:.4f}")
-                
+                avg_iter_time = np.mean(iteration_times[1:])  # Skip the first iteration
+                avg_input_fps = chunk_size / avg_iter_time
+                # DiT 实际产出的帧率（间隔采样时 = avg_input_fps * kfruc_rate）
+                avg_output_fps = avg_input_fps * (self.kfruc_rate if self.enable_kfruc else 1)
+                self.logger.info(
+                    f"Average DiT_fps={avg_input_fps:.2f}"
+                    + (f" (stride={self.kfruc_rate}, FRUC {self.kfruc_rate}x)" if self.enable_kfruc else "")
+                    + f", pipeline_output_fps={avg_output_fps:.2f}"
+                    + f", saved @ {fps:.1f}fps"
+                )
+
             self.logger.info(f"Final video shape: {video.shape}")
-            
+
+            output_fps = fps  # 输出播放帧率与原始视频一致（FRUC 只补帧不提速）
             output_path = os.path.join(output_folder, f"output_{occlusion_method}_vae_{top_k_percentage[0]}_dit_{top_k_percentage[1]}_steps_{num_steps}.mp4")
 
-            export_to_video(video, output_path, fps=fps)
-            
-            self.logger.info(f"Video saved to: {output_path}")
+            export_to_video(video, output_path, fps=output_fps)
+
+            self.logger.info(f"Video saved to: {output_path} @ {output_fps} fps")
             self.logger.info("Parallel inference with timing completed.")
 
 
@@ -1114,7 +1282,8 @@ def main():
     parser.add_argument("--height", type=int, default=480, help="Video height")
     parser.add_argument("--width", type=int, default=832, help="Video width")
     parser.add_argument("--fps", type=int, default=16, help="Output video fps")
-    parser.add_argument("--fps_generate", type=int, default=30, help="Target FPS for the producer (VAE encode) thread. Simulates a camera. If 0, runs as fast as possible. Default: 0.")
+    parser.add_argument("--fps_generate", type=int, default=30,
+                        help="Target FPS for the producer (VAE encode) thread. Simulates a camera. If 0, runs as fast as possible. Default: 0.")
     parser.add_argument("--step", type=int, default=2, help="Step")
     parser.add_argument("--model_type", type=str, default="T2V-1.3B", help="Model type (e.g., T2V-1.3B)")
     parser.add_argument(
@@ -1127,18 +1296,27 @@ def main():
     parser.add_argument("--max_frames", type=int, default=None, help="Video length (number of frames)")
     parser.add_argument("--flow_model", type=str, default="x265", choices=["gmflow", "raft", "x265", "none"], help="Optical flow model to use (from calflow). If None, flow is not calculated.")
     parser.add_argument("--x265_params", type=str, default='{"stage":"encode", "quiet":true}', help="x265 parameters as a JSON string. e.g., '{\"stage\": \"lookahead\"}'")
-    parser.add_argument("--occlusion_method", type=str, default="quantile", choices=["exact","quantile", "morphological", "connected_components", "gather_block"], help="Method to generate occlusion mask.")
-    
+    parser.add_argument("--occlusion_method", type=str, default="quantile", choices=["exact", "quantile", "morphological", "connected_components", "gather_block"], help="Method to generate occlusion mask.")
     parser.add_argument("--vae_ratio", type=float, default=0.1, help="Top percentage of occlusion values to consider as masked.")
     parser.add_argument("--dit_ratio", type=float, default=0.1, help="Top percentage of occlusion values to consider as masked.")
-
     parser.add_argument("--use_cached_text_embedding", action="store_true", help="If set, load pre-computed text embeddings from 'cached_text_embedding.pt' instead of initializing the text encoder.")
-    parser.add_argument("--morph_kernel_size", type=int, default=7, help="Kernel size for morphological opening operation.")
-    parser.add_argument("--mask_dilate", type=int, default=6, help="Dilation (pixels) applied to the base update mask before downsample_mask().")
-    parser.add_argument("--min_res", nargs=2, type=int, default=(40, 40), metavar=("H", "W"), help="Minimum resolution for downsampled masks passed to SIGE (GMFlow).")
+    # FRUC (Frame Rate Up-Conversion) 插帧参数
+    parser.add_argument("--enable_kfruc", action="store_true",
+                        help="Enable FRUC frame interpolation via FFmpeg minterpolate (MEMC algorithm).")
+    parser.add_argument("--kfruc_rate", type=int, default=2,
+                        choices=[2, 4, 8], help="FRUC interpolation rate: 2x, 4x, or 8x. Default: 2.")
+    parser.add_argument("--morph_kernel_size", type=int, default=7,
+                        help="Kernel size for morphological opening operation.")
+    parser.add_argument("--mask_dilate", type=int, default=6,
+                        help="Dilation (pixels) applied to the base update mask before downsample_mask().")
+    parser.add_argument("--min_res", nargs=2, type=int, default=(40, 40), metavar=("H", "W"),
+                        help="Minimum resolution for downsampled masks passed to SIGE (GMFlow).")
     # parser.add_argument("--profile_consumer", action="store_true", help="Enable detailed per-iteration consumer timing breakdown.")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--is_nocache", action="store_true", default=False, help="If is_nocache is True, Wan VAE Encoder compute fully!")
+    parser.add_argument("--is_nocache", action="store_true", default=False,
+                        help="If is_nocache is True, Wan VAE Encoder compute fully!")
+    parser.add_argument("--max_chunks", type=int, default=None,
+                        help="If set, limit the number of hot chunks processed (for debugging/benchmarking).")
     parser.add_argument(
         "--cache_min_downsample",
         type=float,
@@ -1198,7 +1376,7 @@ def main():
     #     datefmt=LOG_DATEFMT,
     #     handlers=handlers,
     # )
-    
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     flow_calculator = None
 
@@ -1206,23 +1384,23 @@ def main():
 
     if args.video_path is not None:
         ALIGNMENT = 32
-        ALIGNMENT = 32
         new_height = (args.height // ALIGNMENT) * ALIGNMENT
         new_width = (args.width // ALIGNMENT) * ALIGNMENT
         if new_height != args.height or new_width != args.width:
             logging.warning(f"Adjusting resolution from {args.height}x{args.width} to {new_height}x{new_width}.")
         resize_hw = (new_height, new_width)
         args.height, args.width = new_height, new_width
-        input_video_original, original_fps = load_mp4_as_tensor(args.video_path, resize_hw=resize_hw, max_frames=args.max_frames)
+        input_video_original, original_fps = load_mp4_as_tensor(
+            args.video_path, resize_hw=resize_hw, max_frames=args.max_frames)
 
-        args.fps=original_fps
+        args.fps = original_fps
 
         input_video_original = input_video_original.unsqueeze(0)
         logging.info(f"Input video tensor shape: {input_video_original.shape}")
         t = input_video_original.shape[2]
         input_video_original = input_video_original.to(dtype=torch.float16)
 
-        if args.flow_model!=None:
+        if args.flow_model != None:
             logging.info(f"Preparing for optical flow calculation with model: {args.flow_model}")
             # flow_calculator = OpticalFlowCalculator(args.flow_model, device)
             x265_params = json.loads(args.x265_params)
@@ -1239,7 +1417,8 @@ def main():
         input_video_original = None
         t = args.num_frames
         if args.fps_generate > 0:
-            logging.warning("--fps_generate is specified but --video_path is not. The simulation will run but without video input.")
+            logging.warning(
+                "--fps_generate is specified but --video_path is not. The simulation will run but without video input.")
 
     config = OmegaConf.load(args.config_path)
     config = OmegaConf.merge(config, OmegaConf.create(vars(args)))
@@ -1248,17 +1427,27 @@ def main():
     config.denoising_step_list = denoising_map.get(args.step, [700, 600, 500, 400, 0])
 
     chunk_size = 4
-    # The number of 'real' chunks that will result in a saved output
-    num_chunks = (t - 5) // chunk_size
-    if ((t-5)%chunk_size!=0): num_chunks+=1
+    # FRUC 启用时，Producer 隔 kfruc_rate 帧采样：
+    # 冷启动占用原始帧索引 0..4*stride，每个 hot chunk 跨度 = chunk_size * stride
+    fruc_stride = args.kfruc_rate if args.enable_kfruc else 1
+    cold_span = 5 * fruc_stride          # 冷启动占用的原始帧数
+    hot_span  = chunk_size * fruc_stride  # 每个 hot chunk 对应的原始帧跨度
+    num_chunks = (t - cold_span) // hot_span
+    if (t - cold_span) % hot_span != 0:
+        num_chunks += 1
+    if args.max_chunks is not None:
+        num_chunks = min(num_chunks, args.max_chunks)
+        logging.info(f"[max_chunks] Limited to {num_chunks} hot chunks ({5 + num_chunks * chunk_size} input frames)")
 
-    pipeline_manager = SingleGPUInferencePipeline(config, device, args.cache_min_downsample, use_cached_text_embedding=args.use_cached_text_embedding)
+    pipeline_manager = SingleGPUInferencePipeline(
+        config, device, args.cache_min_downsample, use_cached_text_embedding=args.use_cached_text_embedding)
     pipeline_manager.set_vae_backend(args.vae_type)
     pipeline_manager.load_model(args.checkpoint_folder)
 
     num_steps = len(pipeline_manager.pipeline.denoising_step_list)
 
-    orchestrator = ParallelInferenceOrchestrator(pipeline_manager)
+    orchestrator = ParallelInferenceOrchestrator(
+        pipeline_manager, enable_kfruc=args.enable_kfruc, kfruc_rate=args.kfruc_rate)
 
     dataset = TextDataset(args.prompt_file_path)
     prompts = [dataset[0]]
@@ -1285,6 +1474,7 @@ def main():
     except Exception as e:
         logging.error(f"Error occurred during inference: {e}", exc_info=True)
         raise
+
 
 if __name__ == "__main__":
     torch.cuda.reset_peak_memory_stats()
