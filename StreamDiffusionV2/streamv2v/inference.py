@@ -103,6 +103,202 @@ class DotDict(dict):
     __setattr__ = dict.__setitem__
 
 
+import collections
+
+class CameraStream:
+    """Real-time camera capture in a background thread.
+
+    The capture loop reads frames from V4L2 as fast as the camera delivers them and
+    appends them to a fixed-size ring buffer. The producer consumes by always taking
+    the most recent ``chunk_size + 1`` frames; any frames left between two consumes
+    are counted as dropped.
+    """
+
+    def __init__(self,
+                 device_path: str = "/dev/video0",
+                 src_w: int = 848,
+                 src_h: int = 480,
+                 src_fps: int = 30,
+                 target_w: int = 832,
+                 target_h: int = 480,
+                 dtype: torch.dtype = torch.float16,
+                 buffer_size: int = 64):
+        self.logger = logging.getLogger("CameraStream")
+        # Force V4L2 backend on Linux; the default (CAP_ANY) sometimes ignores SET_FMT.
+        self.cap = cv2.VideoCapture(device_path, cv2.CAP_V4L2)
+        if not self.cap.isOpened():
+            raise RuntimeError(f"Cannot open camera device: {device_path}")
+        # FOURCC must be set BEFORE width/height: many drivers lock to the default
+        # YUYV bandwidth limit (640x480) if the format change comes after sizing.
+        fourcc_mjpg = cv2.VideoWriter_fourcc(*'MJPG')
+        self.cap.set(cv2.CAP_PROP_FOURCC, fourcc_mjpg)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, src_w)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, src_h)
+        self.cap.set(cv2.CAP_PROP_FPS, src_fps)
+        try:
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        except Exception:
+            pass
+
+        actual_fourcc = int(self.cap.get(cv2.CAP_PROP_FOURCC))
+        actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        try:
+            fourcc_str = actual_fourcc.to_bytes(4, "little").decode(errors="replace")
+        except Exception:
+            fourcc_str = str(actual_fourcc)
+        self.logger.info(
+            f"Camera initial negotiation: FOURCC={fourcc_str}, {actual_w}x{actual_h} @ {actual_fps:.1f}fps"
+        )
+
+        # Some V4L2 drivers need a second pass with FOURCC re-applied AFTER size.
+        if (actual_w, actual_h) != (src_w, src_h):
+            self.logger.warning(
+                f"Driver did not honor {src_w}x{src_h} on first pass (got {actual_w}x{actual_h}); retrying."
+            )
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, src_w)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, src_h)
+            self.cap.set(cv2.CAP_PROP_FOURCC, fourcc_mjpg)
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, src_w)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, src_h)
+            self.cap.set(cv2.CAP_PROP_FPS, src_fps)
+            actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+            self.logger.info(f"After retry: {actual_w}x{actual_h} @ {actual_fps:.1f}fps")
+
+        if target_w > actual_w or target_h > actual_h:
+            raise RuntimeError(
+                f"Camera native size {actual_w}x{actual_h} smaller than target {target_w}x{target_h}. "
+                f"Pick one of the supported sizes from `v4l2-ctl --list-formats-ext -d {device_path}` "
+                f"and pass --camera_src_w/--camera_src_h accordingly."
+            )
+
+        self.target_w = target_w
+        self.target_h = target_h
+        self.crop_x = max((actual_w - target_w) // 2, 0)
+        self.crop_y = max((actual_h - target_h) // 2, 0)
+        self.dtype = dtype
+        self.actual_fps = actual_fps
+        self.src_fps = src_fps
+        self.logger.info(
+            f"Camera opened ({device_path}): native {actual_w}x{actual_h} @ {actual_fps:.1f}fps, "
+            f"crop to {target_w}x{target_h}"
+        )
+
+        self._cond = threading.Condition()
+        self._buffer = collections.deque(maxlen=buffer_size)
+        self._next_frame_id = 0
+        self._stopped = False
+        self._thread = None
+        self._last_consumed_id = -1
+
+        self.frames_captured = 0
+        self.frames_consumed = 0
+        self.frames_dropped = 0
+
+    def start(self):
+        self._thread = threading.Thread(target=self._capture_loop, name="CameraCapture", daemon=True)
+        self._thread.start()
+        return self
+
+    def _preprocess(self, frame_bgr: np.ndarray) -> torch.Tensor:
+        frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        frame = frame[self.crop_y:self.crop_y + self.target_h,
+                      self.crop_x:self.crop_x + self.target_w, :]
+        tensor = torch.from_numpy(frame).permute(2, 0, 1).contiguous().float()
+        tensor = tensor / 127.5 - 1.0
+        return tensor.to(self.dtype)
+
+    def _capture_loop(self):
+        try:
+            while True:
+                with self._cond:
+                    if self._stopped:
+                        break
+                ret, frame = self.cap.read()
+                if not ret:
+                    self.logger.warning("Camera read returned no frame; ending capture loop.")
+                    break
+                tensor = self._preprocess(frame)
+                with self._cond:
+                    self._buffer.append((self._next_frame_id, tensor))
+                    self._next_frame_id += 1
+                    self.frames_captured += 1
+                    self._cond.notify_all()
+        finally:
+            with self._cond:
+                self._stopped = True
+                self._cond.notify_all()
+
+    def take_initial(self, n: int):
+        """Block until ``n`` consecutive frames are buffered. Returns ``(1,3,n,H,W)`` tensor or None on stop."""
+        with self._cond:
+            while not self._stopped and len(self._buffer) < n:
+                self._cond.wait()
+            if len(self._buffer) < n:
+                return None
+            frames = list(self._buffer)[-n:]
+            ids = [f[0] for f in frames]
+            tensors = torch.stack([f[1] for f in frames], dim=1).unsqueeze(0).contiguous()
+            self.frames_dropped += ids[0]  # frames before first taken were never consumed
+            self.frames_consumed += n
+            self._last_consumed_id = ids[-1]
+            return tensors, ids
+
+    def take_chunk_with_lookback(self, chunk_size: int):
+        """Block until at least ``chunk_size+1`` frames are buffered with at least one new frame
+        beyond ``last_consumed_id``. Returns ``(tensor (1,3,chunk_size+1,H,W), ids, dropped_this_chunk)``.
+        ``tensors[:,:,0]`` is the lookback frame; ``tensors[:,:,1:]`` is the chunk.
+        Returns None if the stream has stopped and no new chunk is available.
+        """
+        n = chunk_size + 1
+        with self._cond:
+            while not self._stopped:
+                if len(self._buffer) >= n and self._buffer[-1][0] > self._last_consumed_id:
+                    break
+                self._cond.wait()
+            if len(self._buffer) < n or self._buffer[-1][0] <= self._last_consumed_id:
+                return None
+            frames = list(self._buffer)[-n:]
+            ids = [f[0] for f in frames]
+            tensors = torch.stack([f[1] for f in frames], dim=1).unsqueeze(0).contiguous()
+            chunk_start_id = ids[1]
+            if self._last_consumed_id >= 0:
+                dropped = max(0, chunk_start_id - self._last_consumed_id - 1)
+            else:
+                dropped = chunk_start_id
+            self.frames_dropped += dropped
+            self.frames_consumed += chunk_size
+            self._last_consumed_id = ids[-1]
+            return tensors, ids, dropped
+
+    def stop(self):
+        with self._cond:
+            self._stopped = True
+            self._cond.notify_all()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+        if self.cap.isOpened():
+            self.cap.release()
+
+    def is_stopped(self) -> bool:
+        with self._cond:
+            return self._stopped
+
+    def get_stats(self) -> dict:
+        cap = self.frames_captured
+        cons = self.frames_consumed
+        dropped = max(0, cap - cons)
+        return {
+            "captured": cap,
+            "consumed": cons,
+            "dropped": dropped,
+            "drop_rate": dropped / cap if cap > 0 else 0.0,
+        }
+
+
 class TAEHVDiffusersWrapper(torch.nn.Module):
     def __init__(self, checkpoint_path: str, dtype: torch.dtype = torch.float16):
         super().__init__()
@@ -573,6 +769,18 @@ def compute_noise_scale_and_step(input_video_original: torch.Tensor, end_idx: in
     current_step = int(1000*new_noise_scale)-100
     return new_noise_scale, current_step
 
+def compute_noise_scale_and_step_chunk(chunk_with_prev: torch.Tensor, noise_scale: float, init_noise_scale: float):
+    """Same noise-scale rule as compute_noise_scale_and_step, but takes ``chunk_with_prev`` of
+    shape (B, C, chunk_size+1, H, W) where index 0 is the lookback frame and 1: is the chunk.
+    """
+    cur = chunk_with_prev[:, :, 1:]
+    prev = chunk_with_prev[:, :, :-1]
+    l2_dist = (cur - prev) ** 2
+    l2_dist = (torch.sqrt(l2_dist.mean(dim=(0, 1, 3, 4))).max() / 0.2).clamp(0, 1)
+    new_noise_scale = (init_noise_scale - 0.1 * l2_dist.item()) * 0.9 + noise_scale * 0.1
+    current_step = int(1000 * new_noise_scale) - 100
+    return new_noise_scale, current_step
+
 # --- SingleGPUInferencePipeline class (Logging format updated) ---
 class SingleGPUInferencePipeline:
     def __init__(self, config, device: torch.device, cache_min_downsample: int = 0, use_cached_text_embedding: bool = False):
@@ -649,6 +857,7 @@ class ParallelInferenceOrchestrator:
         self.saver_thread = None
         self.processed = 0
         self.producer_error = None
+        self.stop_event = threading.Event()
 
     def _producer_task_wrapper(self, *args, **kwargs):
         try:
@@ -659,7 +868,7 @@ class ParallelInferenceOrchestrator:
             self.logger.error("Producer thread failed.", exc_info=True)
             try:
                 # Unblock consumer so it can surface the error.
-                self.data_queue.put((None, self.producer_error, None, None, "ERROR"), timeout=1)
+                self._force_put_sentinel((None, self.producer_error, None, None, "ERROR"))
             except Exception:
                 pass
 
@@ -682,6 +891,31 @@ class ParallelInferenceOrchestrator:
             self._raise_if_producer_error(*item)
             return item
 
+    def _put_or_stop(self, item) -> bool:
+        """Put on data_queue, polling stop_event so we can't hang on a full queue
+        when the consumer has stopped. Returns False if stop fires before put."""
+        while not self.stop_event.is_set():
+            try:
+                self.data_queue.put(item, timeout=0.2)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def _force_put_sentinel(self, item):
+        """Always deliver the sentinel; if the queue is full, evict one item to
+        make room. Used so the consumer can never miss the STOP signal."""
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            try:
+                self.data_queue.put(item, timeout=0.2)
+                return
+            except queue.Full:
+                try:
+                    self.data_queue.get_nowait()
+                except queue.Empty:
+                    pass
+
     def _stream_encode(self, video: torch.Tensor, mask: torch.Tensor, flow: torch.Tensor, is_nocache: bool) -> torch.Tensor:
         return self.pipeline_manager.vae_encoder.stream_encode(video, mask, flow, is_nocache=is_nocache)
 
@@ -689,173 +923,257 @@ class ParallelInferenceOrchestrator:
         return self.pipeline_manager.vae_decoder.stream_decode_to_pixel(latents, mask, flow)
         self.prev_latent=None
 
+    def _encode_chunk_and_build_flow(self,
+                                     inp: torch.Tensor,
+                                     ref_frame_tensor: torch.Tensor,
+                                     cur_frame_tensor: torch.Tensor,
+                                     flow_calculator: "OpticalFlowCalculator",
+                                     mask_dilate: int,
+                                     min_res: tuple,
+                                     occlusion_method: str,
+                                     top_k_percentage,
+                                     is_nocache: bool):
+        """Run flow + encoder mask build + VAE encode for one chunk and produce
+        ``(latents, flow_data_for_dit)``. Shared between tensor and camera modes."""
+        flow_pair = flow_calculator.calculate_flow(ref_frame_tensor, cur_frame_tensor)
+        bwd_flow, bwd_occ = flow_pair
+
+        if occlusion_method == "gather_block":
+            masks_enc = build_gather_block_masks(
+                bwd_occ.squeeze(0).squeeze(0), top_k_percentage=top_k_percentage[0]
+            )
+        else:
+            mask_enc = dilate_mask(bwd_occ.squeeze(0).squeeze(0), int(mask_dilate))
+            masks_enc = downsample_mask(
+                mask_enc,
+                min_res=tuple(min_res),
+                dilation=int(mask_dilate),
+            )
+
+        latents = self._stream_encode(
+            inp,
+            mask=masks_enc,
+            flow=bwd_flow.squeeze(0).permute(1, 2, 0).contiguous(),
+            is_nocache=is_nocache,
+        )
+        latents = latents.transpose(2, 1).contiguous()
+
+        latent_h, latent_w = latents.shape[-2:]
+        target_h, target_w = latent_h, latent_w
+        downsampled_flow = F.interpolate(bwd_flow, size=(target_h, target_w), mode='bilinear', align_corners=False)
+        downsampled_flow *= (float(target_h) / bwd_flow.shape[2])
+        downsampled_occ = F.interpolate(bwd_occ, size=(target_h, target_w), mode='bilinear', align_corners=False)
+        latent_binary_mask = flow_calculator.compute_binary_occlusion_mask(downsampled_occ)
+
+        downsampled_occ_half = F.interpolate(bwd_occ, size=(target_h // 2, target_w // 2), mode='bilinear', align_corners=False)
+        latent_binary_mask_half = flow_calculator.compute_binary_occlusion_mask(downsampled_occ_half)
+        flow_data = (downsampled_flow, latent_binary_mask, latent_binary_mask_half)
+        return latents, flow_data
+
     def _producer_task(self, input_video_original: torch.Tensor,
                        flow_calculator: OpticalFlowCalculator,
                        num_chunks: int, chunk_size: int, noise_scale: float,
-                       num_steps: int, fps_generate: int, mask_dilate: int, min_res: tuple[int, int],
-                       occlusion_method: str, top_k_percentage: dict, is_nocache: bool):
+                       num_steps: int, fps_generate: int, mask_dilate: int, min_res: tuple,
+                       occlusion_method: str, top_k_percentage, is_nocache: bool,
+                       camera_stream: "CameraStream" = None):
         self.logger.info("Producer thread started.")
 
-        # torch.cuda.synchronize(device=self.device)
-        # mem_producer_start = torch.cuda.memory_reserved(device=self.device)
+        camera_mode = camera_stream is not None
+        if camera_mode:
+            self.logger.info("Producer: camera mode (real-time stream).")
+        else:
+            self.logger.info("Producer: tensor/file mode.")
 
-        is_realtime_sim = fps_generate > 0
+        is_realtime_sim = (not camera_mode) and fps_generate > 0
         chunk_interval_seconds = 0
         if is_realtime_sim:
             chunk_interval_seconds = chunk_size / fps_generate
-            self.logger.info(f"Real-time simulation enabled: Target Producer FPS={fps_generate}, Chunk Size={chunk_size}, Target Interval={chunk_interval_seconds:.4f}s")
-
-        # 用于维持稳定生产速率的时间锚点
+            self.logger.info(
+                f"Real-time simulation enabled (file mode): Target Producer FPS={fps_generate}, "
+                f"Chunk Size={chunk_size}, Target Interval={chunk_interval_seconds:.4f}s"
+            )
         next_chunk_submit_time = time.time()
 
-        # flow = None
-        # masks_enc = None
-        # masks_dec = None
-
         with torch.cuda.stream(self.producer_stream):
-            # --- 1. 为"冷启动" / prepare() 调用生产数据 ---
+            # --- 1. Cold start: encode the first 5 frames for prepare() ---
             start_idx, end_idx = 0, 5
-
             prod_end_event = torch.cuda.Event(enable_timing=True)
 
-            if input_video_original is not None:
+            if camera_mode:
+                taken = camera_stream.take_initial(5)
+                if taken is None:
+                    self.logger.error("Camera stream stopped before initial 5 frames were available.")
+                    self._force_put_sentinel((None, None, None, None, "STOP"))
+                    return
+                init_chunk_cpu, init_ids = taken
+                self.logger.info(
+                    f"Producer: cold-start frames captured (ids={init_ids}); "
+                    f"camera stats={camera_stream.get_stats()}"
+                )
+                inp = init_chunk_cpu.to(self.device, non_blocking=True)
+                latents = self._stream_encode(inp, None, None, is_nocache)
+                latents = latents.transpose(2, 1).contiguous()
+                noise = torch.randn_like(latents)
+                noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
+            elif input_video_original is not None:
                 inp = input_video_original[:, :, start_idx:end_idx].to(self.device, non_blocking=True)
                 latents = self._stream_encode(inp, None, None, is_nocache)
                 latents = latents.transpose(2, 1).contiguous()
                 noise = torch.randn_like(latents)
                 noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
             else:
-                noisy_latents = torch.randn(1, 1 + self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.float16)
+                noisy_latents = torch.randn(
+                    1, 1 + self.pipeline.num_frame_per_block, 16,
+                    self.pipeline.height, self.pipeline.width,
+                    device=self.device, dtype=torch.float16,
+                )
 
             prod_end_event.record()
-            self.data_queue.put((noisy_latents, None, None, prod_end_event, "Initial"))
-            self.logger.info(f"Producer: Initial 5-frame data block placed in queue.{time.time()-next_chunk_submit_time}")
+            if not self._put_or_stop((noisy_latents, None, None, prod_end_event, "Initial")):
+                self._force_put_sentinel((None, None, None, None, "STOP"))
+                return
+            self.logger.info(
+                f"Producer: Initial 5-frame data block placed in queue. "
+                f"({time.time()-next_chunk_submit_time:.4f}s)"
+            )
 
-
-            # --- 2. 为"热循环"生产数据 ---
+            # --- 2. Hot loop ---
             init_noise_scale = noise_scale
-            total_hot_chunks = num_chunks + num_steps - 1
-            ref_frame_idx = 4
-            for i in range(total_hot_chunks):
-                # --- [修正后] 的 FPS 节流逻辑 ---
-                if is_realtime_sim:
-                    # 设置下一个数据块 *应该被提交* 的时间点
-                    next_chunk_submit_time += chunk_interval_seconds
+            ref_frame_idx = 4  # tensor mode only
+            chunk_counter = 0
+            real_chunks_emitted = 0
 
-                    # 计算需要休眠多久才能达到提交时间点
-                    current_time = time.time()
-                    sleep_needed = next_chunk_submit_time - current_time
-                    if sleep_needed > 0:
-                        self.logger.warning(f"Producer is sleeping for {sleep_needed:.4f}s")
-                        time.sleep(sleep_needed)
-                    else:
-                        self.logger.warning(f"Producer is lagging behind real-time schedule by {-sleep_needed:.4f}s")
+            while True:
+                # Termination check
+                if camera_mode:
+                    if self.stop_event.is_set() or camera_stream.is_stopped():
+                        self.logger.info(
+                            f"Producer: stop signal / camera ended. Real chunks emitted={real_chunks_emitted}."
+                        )
+                        break
+                else:
+                    if chunk_counter >= num_chunks + num_steps - 1:
+                        break
+                    if is_realtime_sim:
+                        next_chunk_submit_time += chunk_interval_seconds
+                        sleep_needed = next_chunk_submit_time - time.time()
+                        if sleep_needed > 0:
+                            self.logger.warning(f"Producer is sleeping for {sleep_needed:.4f}s")
+                            time.sleep(sleep_needed)
+                        else:
+                            self.logger.warning(
+                                f"Producer is lagging behind real-time schedule by {-sleep_needed:.4f}s"
+                            )
 
-                chunk_id = i + 1
-                start_idx = end_idx
-                end_idx += chunk_size
+                chunk_counter += 1
+                chunk_id = chunk_counter
                 prod_end_event = torch.cuda.Event(enable_timing=True)
                 flow_data = None
-                if input_video_original is not None and end_idx <= input_video_original.shape[2]:
-                    inp = input_video_original[:, :, start_idx:end_idx].to(self.device)
-                    cur_frame_idx = end_idx - 1
+                current_step = None
 
-                    self.logger.info(f"Chunk {chunk_id}: calculating flow Frame {ref_frame_idx} -> {cur_frame_idx}")
-                    ref_frame_tensor = input_video_original[:, :, ref_frame_idx].to(self.device, torch.float32)
-                    cur_frame_tensor = input_video_original[:, :, cur_frame_idx].to(self.device, torch.float32)
+                if camera_mode:
+                    taken = camera_stream.take_chunk_with_lookback(chunk_size)
+                    if taken is None:
+                        self.logger.info("Producer: camera stream returned no more chunks; transitioning to flush.")
+                        chunk_counter -= 1  # undo this slot, flush will be handled below
+                        break
+                    chunk_with_prev_cpu, ids, dropped = taken
+                    self.logger.info(
+                        f"Camera chunk {chunk_id}: ids={ids[1:]} (lookback id={ids[0]}), "
+                        f"dropped_since_last={dropped}, total_stats={camera_stream.get_stats()}"
+                    )
+                    chunk_with_prev = chunk_with_prev_cpu.to(self.device, non_blocking=True)
+                    inp = chunk_with_prev[:, :, 1:].contiguous()  # (1,3,chunk_size,H,W)
+                    ref_frame_tensor = chunk_with_prev[:, :, 0].to(torch.float32)
+                    cur_frame_tensor = chunk_with_prev[:, :, -1].to(torch.float32)
 
-                    flow_data = flow_calculator.calculate_flow(ref_frame_tensor, cur_frame_tensor)
-                    bwd_flow, bwd_occ = flow_data
+                    latents, flow_data = self._encode_chunk_and_build_flow(
+                        inp, ref_frame_tensor, cur_frame_tensor, flow_calculator,
+                        mask_dilate, min_res, occlusion_method, top_k_percentage, is_nocache,
+                    )
 
-                    # print(latents.shape,bwd_flow.shape,bwd_occ.shape)
-                
-                    if occlusion_method == "gather_block":
-                        masks_enc = build_gather_block_masks(bwd_occ.squeeze(0).squeeze(0), top_k_percentage=top_k_percentage[0])
-                    else:
-                        # Encoder masks
-                        mask_enc = dilate_mask(bwd_occ.squeeze(0).squeeze(0), int(mask_dilate))
-                        masks_enc = downsample_mask(
-                            mask_enc,
-                            min_res=tuple(min_res),
-                            dilation=int(mask_dilate),
-                        )
-                    ref_frame_idx = cur_frame_idx
-
-                    # start_event = torch.cuda.Event(enable_timing=True)
-                    # end_event = torch.cuda.Event(enable_timing=True)
-                    # torch.cuda.synchronize()  # 保证前面操作完成
-                    # start_event.record()
-
-                    latents = self._stream_encode(inp, mask=masks_enc, flow=bwd_flow.squeeze(0).permute(1, 2, 0).contiguous(),is_nocache=is_nocache)
-                    
-                    # end_event.record()
-                    # torch.cuda.synchronize()
-                    # elapsed_time_ms = start_event.elapsed_time(end_event)
-                    # print(f"stream_encode GPU time: {elapsed_time_ms:.3f} ms")
-
-                    latents = latents.transpose(2, 1).contiguous()
-
-                    noise_scale, current_step = compute_noise_scale_and_step(
-                        input_video_original, end_idx, chunk_size, noise_scale, init_noise_scale
+                    noise_scale, current_step = compute_noise_scale_and_step_chunk(
+                        chunk_with_prev, noise_scale, init_noise_scale
                     )
                     noise = torch.randn_like(latents)
                     noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
-
-
-
-                    latent_h, latent_w=latents.shape[-2:]
-                    target_h=latent_h
-                    target_w=latent_w
-                    downsampled_flow = F.interpolate(bwd_flow, size=(target_h, target_w), mode='bilinear', align_corners=False)
-                    downsampled_flow *= (float(target_h) / bwd_flow.shape[2])
-                    downsampled_occ= F.interpolate(bwd_occ, size=(target_h, target_w), mode='bilinear', align_corners=False)
-                    latent_binary_mask = flow_calculator.compute_binary_occlusion_mask(downsampled_occ)
-
-                    downsampled_occ_half= F.interpolate(bwd_occ, size=(target_h//2, target_w//2), mode='bilinear', align_corners=False)
-                    latent_binary_mask_half = flow_calculator.compute_binary_occlusion_mask(downsampled_occ_half)
-                    flow_data= (downsampled_flow,latent_binary_mask,latent_binary_mask_half)
-
-                    # if (flow_data!=None): 
-                    #     warped_frame = universal_flow_warp(ref_frame_tensor, bwd_flow)
-                    #     viz_frame_n = tensor_to_np_img(ref_frame_tensor)
-                    #     viz_frame_n1 = tensor_to_np_img(cur_frame_tensor)
-                    #     viz_warped_frame = tensor_to_np_img(warped_frame)
-                    #     viz_frame_flow = visualize_flow_to_rgb(bwd_flow, vector_stride=20)
-                    #     viz_frame_compo=visualize_flow_with_source_overlay(viz_frame_n, viz_frame_n1, viz_frame_flow, alpha=0.4)
-
-                    #     occ_latent=latents.squeeze(1)
-                    #     viz_latent=visualize_latent_to_image(occ_latent)
-                    #     latent_binary_mask_sq=latent_binary_mask.squeeze(0).squeeze(0).unsqueeze(-1).expand(-1,-1,3)
-                    #     green_bgr=torch.tensor([0,255,0], device=latent_binary_mask_sq.device).view(1,1,3).expand_as(latent_binary_mask_sq)
-                    #     viz_occ_latent=torch.where(latent_binary_mask_sq,green_bgr,torch.from_numpy(viz_latent).to(latent_binary_mask_sq.device))
-                    #     viz_occ_latent=viz_occ_latent.cpu().numpy().astype(np.uint8)
-
-                    #     pixel_row = np.concatenate([viz_frame_n, viz_frame_n1, viz_warped_frame, viz_frame_compo], axis=1)
-                    #     final_image= pixel_row
-                    #     save_path = os.path.join("./outputs/warped", f"comparison_chunk_{chunk_id:04d}.png")
-                    #     cv2.imwrite(save_path, cv2.cvtColor(final_image, cv2.COLOR_RGB2BGR))
-
-                    #     latent_row=np.concatenate([viz_occ_latent,viz_latent], axis=1)
-                    #     save_path = os.path.join("./outputs/warped", f"comparison_latent_{chunk_id:04d}.png")
-                    #     cv2.imwrite(save_path, latent_row)
-
+                    real_chunks_emitted += 1
 
                 else:
-                    noisy_latents = torch.randn(1, self.pipeline.num_frame_per_block, 16, self.pipeline.height, self.pipeline.width, device=self.device, dtype=torch.float16)
-                    current_step = None
+                    start_idx = end_idx
+                    end_idx += chunk_size
+                    if input_video_original is not None and end_idx <= input_video_original.shape[2]:
+                        inp = input_video_original[:, :, start_idx:end_idx].to(self.device)
+                        cur_frame_idx = end_idx - 1
+
+                        self.logger.info(
+                            f"Chunk {chunk_id}: calculating flow Frame {ref_frame_idx} -> {cur_frame_idx}"
+                        )
+                        ref_frame_tensor = input_video_original[:, :, ref_frame_idx].to(self.device, torch.float32)
+                        cur_frame_tensor = input_video_original[:, :, cur_frame_idx].to(self.device, torch.float32)
+
+                        latents, flow_data = self._encode_chunk_and_build_flow(
+                            inp, ref_frame_tensor, cur_frame_tensor, flow_calculator,
+                            mask_dilate, min_res, occlusion_method, top_k_percentage, is_nocache,
+                        )
+
+                        noise_scale, current_step = compute_noise_scale_and_step(
+                            input_video_original, end_idx, chunk_size, noise_scale, init_noise_scale
+                        )
+                        noise = torch.randn_like(latents)
+                        noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
+                        ref_frame_idx = cur_frame_idx
+                        real_chunks_emitted += 1
+                    else:
+                        # tail flush in tensor mode
+                        noisy_latents = torch.randn(
+                            1, self.pipeline.num_frame_per_block, 16,
+                            self.pipeline.height, self.pipeline.width,
+                            device=self.device, dtype=torch.float16,
+                        )
+                        current_step = None
 
                 prod_end_event.record()
-                self.data_queue.put((noisy_latents, current_step, flow_data, prod_end_event, chunk_id))
-                
-                if chunk_id <= num_chunks:
-                    self.logger.info(f"Producer: Real data chunk {chunk_id}/{num_chunks} placed in queue. ")
-                    self.logger.info(f"Queue len: {self.data_queue.qsize()}")
-                else:
-                    flush_chunk_id = chunk_id - num_chunks
-                    total_flush_chunks = num_steps - 1
-                    self.logger.info(f"Producer: Flush chunk {flush_chunk_id}/{total_flush_chunks} placed in queue.")
+                if not self._put_or_stop((noisy_latents, current_step, flow_data, prod_end_event, chunk_id)):
+                    self.logger.info("Producer: stop_event set while enqueueing; exiting hot loop.")
+                    break
 
-        self.logger.info("Producer thread finished. All data blocks produced.")
+                if camera_mode:
+                    self.logger.info(
+                        f"Producer: camera chunk {chunk_id} enqueued. Queue len={self.data_queue.qsize()}"
+                    )
+                else:
+                    if chunk_id <= num_chunks:
+                        self.logger.info(f"Producer: Real data chunk {chunk_id}/{num_chunks} placed in queue. ")
+                        self.logger.info(f"Queue len: {self.data_queue.qsize()}")
+                    else:
+                        flush_chunk_id = chunk_id - num_chunks
+                        total_flush_chunks = num_steps - 1
+                        self.logger.info(
+                            f"Producer: Flush chunk {flush_chunk_id}/{total_flush_chunks} placed in queue."
+                        )
+
+            # --- 3. Pipeline drain (only camera mode reaches here with real data;
+            #        tensor mode already produced flush chunks inside the loop).
+            #        Skip drain entirely if we're stopping — consumer is gone. ---
+            if camera_mode and not self.stop_event.is_set():
+                drain_chunks = max(0, num_steps - 1)
+                self.logger.info(f"Producer: producing {drain_chunks} flush chunks to drain DiT pipeline.")
+                for _ in range(drain_chunks):
+                    chunk_counter += 1
+                    prod_end_event = torch.cuda.Event(enable_timing=True)
+                    noisy_latents = torch.randn(
+                        1, self.pipeline.num_frame_per_block, 16,
+                        self.pipeline.height, self.pipeline.width,
+                        device=self.device, dtype=torch.float16,
+                    )
+                    prod_end_event.record()
+                    if not self._put_or_stop((noisy_latents, None, None, prod_end_event, chunk_counter)):
+                        break
+
+        # Sentinel: always delivered, even if the queue is full at this moment.
+        self._force_put_sentinel((None, None, None, None, "STOP"))
+        self.logger.info("Producer thread finished. All data blocks produced; sentinel sent.")
 
     def _saver_task(self, results_dict: dict):
         self.logger.info("Saver thread started.")
@@ -909,11 +1227,11 @@ class ParallelInferenceOrchestrator:
         num_steps: int,
         fps_generate: int,
         mask_dilate: int,
-        min_res: tuple[int, int],
+        min_res: tuple,
         occlusion_method: str,
-        top_k_percentage: int,
-        # profile_consumer: bool = False,
+        top_k_percentage,
         is_nocache: bool,
+        camera_stream: "CameraStream" = None,
     ):
         # torch.cuda.synchronize(device=self.device)
         # mem_run_start = torch.cuda.memory_reserved(device=self.device)
@@ -926,19 +1244,21 @@ class ParallelInferenceOrchestrator:
 
         self.producer_thread = threading.Thread(
             target=self._producer_task_wrapper,
-            args=(input_video_original,
-                    flow_calculator,
-                    num_chunks,
-                    chunk_size,
-                    noise_scale,
-                    num_steps,
-                    fps_generate,
-                    mask_dilate,
-                    min_res,
-                    occlusion_method,
-                    top_k_percentage,
-                    is_nocache,
-                )
+            kwargs=dict(
+                input_video_original=input_video_original,
+                flow_calculator=flow_calculator,
+                num_chunks=num_chunks,
+                chunk_size=chunk_size,
+                noise_scale=noise_scale,
+                num_steps=num_steps,
+                fps_generate=fps_generate,
+                mask_dilate=mask_dilate,
+                min_res=min_res,
+                occlusion_method=occlusion_method,
+                top_k_percentage=top_k_percentage,
+                is_nocache=is_nocache,
+                camera_stream=camera_stream,
+            ),
         )
         self.producer_thread.start()
 
@@ -984,20 +1304,13 @@ class ParallelInferenceOrchestrator:
                 # save_results += 1
                 # self.logger.info("Consumer: Initial block processed and saved.")
 
-            # torch.cuda.synchronize(device=self.device)
-            # mem_run_end = torch.cuda.memory_reserved(device=self.device)
-            # print("GPU memory used by consumer during run(): ", (mem_run_end - mem_run_start)/1024/1024/1024, "GB","from",mem_run_start/1024/1024/1024,"GB to",mem_run_end/1024/1024/1024,"GB")
-            # --- 4. Process "Hot Loop" data from the queue ---
-            last_save_time = time.time() # Initialize timer for first iteration
-            while self.processed < num_chunks + num_steps - 1:
-                # iter_start_cpu = time.perf_counter()
-                # queue_start = time.perf_counter()
+            # --- 4. Process "Hot Loop" data from the queue (loop until STOP sentinel) ---
+            last_save_time = time.time()
+            while True:
                 noisy_latents, current_step, flow_data, producer_done_event, chunk_id = self._get_from_queue_or_raise()
-                # queue_wait_s = time.perf_counter() - queue_start
-                # print("*" * 40)
-                # print(f"Queue wait time: {queue_wait_s:.4f}s")
-                # print("*" * 40)
-
+                if chunk_id == "STOP":
+                    self.logger.info("Consumer: received STOP sentinel; ending hot loop.")
+                    break
 
                 with torch.cuda.stream(self.consumer_stream):
                     self.consumer_stream.wait_event(producer_done_event)
@@ -1035,6 +1348,7 @@ class ParallelInferenceOrchestrator:
                         # start_event.record()
 
                         video_out = self._stream_decode_to_pixel(denoised_pred[[-1]], mask=None, flow=None)
+                        
                         # end_event.record()
                         # torch.cuda.synchronize()
                         # elapsed_time_ms = start_event.elapsed_time(end_event)
@@ -1071,35 +1385,51 @@ class ParallelInferenceOrchestrator:
                     # print(self.processed,"GPU memory used by consumer during run(): ", (mem_run_end2 - mem_run_end)/1024/1024/1024, "GB","from",mem_run_end/1024/1024/1024,"GB to",mem_run_end2/1024/1024/1024,"GB")
 
         finally:
+            # Make sure producer is unblocked even if consumer crashed.
+            self.stop_event.set()
             self.producer_thread.join()
 
-            self.save_queue.put(None) # Sentinel value
+            self.save_queue.put(None)  # Sentinel value
             self.saver_thread.join()
 
-            self.logger.info("="*50)
+            self.logger.info("=" * 50)
             self.logger.info("Performance Summary")
-            self.logger.info("="*50)
+            self.logger.info("=" * 50)
 
-            # Ensure we have the correct number of frames
-            video_list = [results[i] for i in range(save_results)]
-            video = np.concatenate(video_list, axis=0)
+            video_list = [results[i] for i in range(save_results) if i in results]
+            if video_list:
+                video = np.concatenate(video_list, axis=0)
+                print(f"Video shape before trimming: {video.shape}")
+                if camera_stream is None and input_video_original is not None:
+                    video = video[:input_video_original.shape[2]]
+            else:
+                self.logger.warning("No output frames were produced.")
+                video = None
 
-            print(f"Video shape before trimming: {video.shape}")
-            video = video[:input_video_original.shape[2]]
-
-            # --- NEW: Final FPS calculation based on actual iteration times ---
             if iteration_times:
-                avg_iter_time = np.mean(iteration_times[1:])  # Modification: Skip the first iteration 
+                avg_iter_time = np.mean(iteration_times[1:]) if len(iteration_times) > 1 else iteration_times[0]
                 avg_fps = chunk_size / avg_iter_time
-                self.logger.info(f"Average End-to-End FPS (Consumer-side, after pipeline fill): {avg_fps:.4f}")
-                
-            self.logger.info(f"Final video shape: {video.shape}")
-            
-            output_path = os.path.join(output_folder, f"output_{occlusion_method}_vae_{top_k_percentage[0]}_dit_{top_k_percentage[1]}_steps_{num_steps}.mp4")
+                self.logger.info(
+                    f"Average End-to-End FPS (Consumer-side, after pipeline fill): {avg_fps:.4f}"
+                )
 
-            export_to_video(video, output_path, fps=fps)
-            
-            self.logger.info(f"Video saved to: {output_path}")
+            if camera_stream is not None:
+                stats = camera_stream.get_stats()
+                self.logger.info(
+                    f"Camera frame stats: captured={stats['captured']}, consumed={stats['consumed']}, "
+                    f"dropped={stats['dropped']}, drop_rate={stats['drop_rate']*100:.2f}%"
+                )
+
+            if video is not None:
+                self.logger.info(f"Final video shape: {video.shape}")
+                tag = "camera" if camera_stream is not None else "file"
+                output_path = os.path.join(
+                    output_folder,
+                    f"output_{tag}_{occlusion_method}_vae_{top_k_percentage[0]}_dit_{top_k_percentage[1]}_steps_{num_steps}.mp4",
+                )
+                export_to_video(video, output_path, fps=fps)
+                self.logger.info(f"Video saved to: {output_path}")
+
             self.logger.info("Parallel inference with timing completed.")
 
 
@@ -1148,6 +1478,20 @@ def main():
             "Larger resolutions will run full compute without decoder scatter cache."
         ),
     )
+
+    # ===== camera (real-time) mode =====
+    parser.add_argument("--use_camera", action="store_true",
+                        help="Use a live V4L2 camera as input. When set, --video_path is ignored.")
+    parser.add_argument("--camera_device", type=str, default="/dev/video0",
+                        help="V4L2 camera device path. Default /dev/video0.")
+    parser.add_argument("--camera_src_w", type=int, default=848,
+                        help="Camera native capture width.")
+    parser.add_argument("--camera_src_h", type=int, default=480,
+                        help="Camera native capture height.")
+    parser.add_argument("--camera_src_fps", type=int, default=30,
+                        help="Camera native capture FPS.")
+    parser.add_argument("--max_seconds", type=float, default=0,
+                        help="Stop after this many seconds of streaming (0 = run until Ctrl+C / camera ends).")
 
     def _kernel_backend(v: str) -> str:
         v = (v or "").strip().lower()
@@ -1201,11 +1545,55 @@ def main():
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     flow_calculator = None
+    camera_stream = None
 
-    ratio_list=(args.vae_ratio,args.dit_ratio)
+    ratio_list = (args.vae_ratio, args.dit_ratio)
 
-    if args.video_path is not None:
+    def _build_flow_calculator():
+        if args.flow_model is None or args.flow_model.lower() == "none":
+            return None
+        logging.info(f"Preparing for optical flow calculation with model: {args.flow_model}")
+        x265_params = json.loads(args.x265_params)
+        return OpticalFlowCalculator(
+            flow_model_type=args.flow_model,
+            device=device,
+            x265_params=x265_params,
+            occlusion_method=args.occlusion_method,
+            top_k_percentage=ratio_list,
+        )
+
+    if args.use_camera:
         ALIGNMENT = 32
+        new_height = (args.height // ALIGNMENT) * ALIGNMENT
+        new_width = (args.width // ALIGNMENT) * ALIGNMENT
+        if new_height != args.height or new_width != args.width:
+            logging.warning(
+                f"Adjusting resolution from {args.height}x{args.width} to {new_height}x{new_width}."
+            )
+        args.height, args.width = new_height, new_width
+        args.fps = args.camera_src_fps  # output mp4 fps tracks camera capture rate
+
+        camera_stream = CameraStream(
+            device_path=args.camera_device,
+            src_w=args.camera_src_w,
+            src_h=args.camera_src_h,
+            src_fps=args.camera_src_fps,
+            target_w=args.width,
+            target_h=args.height,
+            dtype=torch.float16,
+        ).start()
+
+        input_video_original = None
+        # No predetermined frame count in real-time mode; producer runs until stop.
+        t = 0
+        flow_calculator = _build_flow_calculator()
+
+        logging.info(
+            f"Camera mode enabled: capture {args.camera_src_w}x{args.camera_src_h}@{args.camera_src_fps}fps, "
+            f"target {args.width}x{args.height}, max_seconds={args.max_seconds}"
+        )
+
+    elif args.video_path is not None:
         ALIGNMENT = 32
         new_height = (args.height // ALIGNMENT) * ALIGNMENT
         new_width = (args.width // ALIGNMENT) * ALIGNMENT
@@ -1215,31 +1603,22 @@ def main():
         args.height, args.width = new_height, new_width
         input_video_original, original_fps = load_mp4_as_tensor(args.video_path, resize_hw=resize_hw, max_frames=args.max_frames)
 
-        args.fps=original_fps
+        args.fps = original_fps
 
         input_video_original = input_video_original.unsqueeze(0)
         logging.info(f"Input video tensor shape: {input_video_original.shape}")
         t = input_video_original.shape[2]
         input_video_original = input_video_original.to(dtype=torch.float16)
 
-        if args.flow_model!=None:
-            logging.info(f"Preparing for optical flow calculation with model: {args.flow_model}")
-            # flow_calculator = OpticalFlowCalculator(args.flow_model, device)
-            x265_params = json.loads(args.x265_params)
-            flow_calculator = OpticalFlowCalculator(
-                flow_model_type=args.flow_model,
-                device=device,
-                x265_params=x265_params,
-                occlusion_method=args.occlusion_method,
-                top_k_percentage=ratio_list,
-                # morph_kernel_size=args.morph_kernel_size,
-                # conn_comp_threshold_quantile=args.conn_comp_thresh
-            )
+        flow_calculator = _build_flow_calculator()
     else:
         input_video_original = None
-        t = args.num_frames
+        t = 0
         if args.fps_generate > 0:
-            logging.warning("--fps_generate is specified but --video_path is not. The simulation will run but without video input.")
+            logging.warning(
+                "--fps_generate is specified but neither --video_path nor --use_camera is set. "
+                "The simulation will run but without video input."
+            )
 
     config = OmegaConf.load(args.config_path)
     config = OmegaConf.merge(config, OmegaConf.create(vars(args)))
@@ -1248,9 +1627,13 @@ def main():
     config.denoising_step_list = denoising_map.get(args.step, [700, 600, 500, 400, 0])
 
     chunk_size = 4
-    # The number of 'real' chunks that will result in a saved output
-    num_chunks = (t - 5) // chunk_size
-    if ((t-5)%chunk_size!=0): num_chunks+=1
+    # The number of 'real' chunks that will result in a saved output (file/tensor mode only).
+    if camera_stream is not None:
+        num_chunks = 0  # unused in camera mode; producer terminates via stop_event/sentinel
+    else:
+        num_chunks = (t - 5) // chunk_size
+        if ((t - 5) % chunk_size != 0):
+            num_chunks += 1
 
     pipeline_manager = SingleGPUInferencePipeline(config, device, args.cache_min_downsample, use_cached_text_embedding=args.use_cached_text_embedding)
     pipeline_manager.set_vae_backend(args.vae_type)
@@ -1262,6 +1645,18 @@ def main():
 
     dataset = TextDataset(args.prompt_file_path)
     prompts = [dataset[0]]
+
+    # Watchdog thread: in camera mode, signal stop after --max_seconds (if > 0).
+    watchdog_thread = None
+    if camera_stream is not None and args.max_seconds and args.max_seconds > 0:
+        def _watchdog():
+            stopped = orchestrator.stop_event.wait(timeout=args.max_seconds)
+            if not stopped:
+                logging.info(f"Watchdog: --max_seconds={args.max_seconds} elapsed; signalling stop.")
+                orchestrator.stop_event.set()
+                camera_stream.stop()
+        watchdog_thread = threading.Thread(target=_watchdog, name="MaxSecondsWatchdog", daemon=True)
+        watchdog_thread.start()
 
     try:
         orchestrator.run_parallel_inference(
@@ -1279,12 +1674,26 @@ def main():
             args.min_res,
             args.occlusion_method,
             top_k_percentage=ratio_list,
-            # args.profile_consumer,
             is_nocache=args.is_nocache,
+            camera_stream=camera_stream,
         )
+    except KeyboardInterrupt:
+        logging.warning("KeyboardInterrupt received; stopping streams.")
+        orchestrator.stop_event.set()
+        if camera_stream is not None:
+            camera_stream.stop()
+        raise
     except Exception as e:
         logging.error(f"Error occurred during inference: {e}", exc_info=True)
+        orchestrator.stop_event.set()
+        if camera_stream is not None:
+            camera_stream.stop()
         raise
+    finally:
+        if camera_stream is not None:
+            camera_stream.stop()
+        if watchdog_thread is not None:
+            watchdog_thread.join(timeout=1)
 
 if __name__ == "__main__":
     torch.cuda.reset_peak_memory_stats()
