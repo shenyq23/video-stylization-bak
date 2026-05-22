@@ -24,6 +24,11 @@ import cv2
 
 from gmflow.geometry import flow_warp as universal_flow_warp
 
+from causvid.profile_utils import (
+    set_active_timings, clear_active_timings, time_block,
+    begin_segment, end_segment,
+)
+
 def visualize_latent_to_image(latent: torch.Tensor) -> np.ndarray:
     """Visualizes a latent tensor by taking the mean across channels and normalizing."""
     if latent.dim() == 4:
@@ -238,119 +243,72 @@ class CausalWanSelfAttention(nn.Module):
         mask=pack['mask'] if 'mask' in pack else None
 
         if use_sparse:
-            # x shape: [3432, 1536]
             total_tokens, C = x.shape
             n, d = self.num_heads, self.head_dim
 
-            # 1. QKV 投射
-            # q,k,v shape: [3432, 1536]
-            q = self.norm_q(self.q(x))
-            k = self.norm_k(self.k(x))
-            v = self.v(x)
-            
-            # reshape to [3432, 12, 128]
-            q = q.view(total_tokens, n, d)
-            k = k.view(total_tokens, n, d)
-            v = v.view(total_tokens, n, d)
+            # 1. QKV linear projections
+            with time_block("DiT/Linear"):
+                q = self.norm_q(self.q(x))
+                k = self.norm_k(self.k(x))
+                v = self.v(x)
+                q = q.view(total_tokens, n, d)
+                k = k.view(total_tokens, n, d)
+                v = v.view(total_tokens, n, d)
 
             # 2. RoPE
-            # roped_query, roped_key shape: [3432, 16, 96]
-            # frame_seqlen = pack['full_seq_len'] // grid_sizes[0, 0].item()
-            # kv_cache_size = kv_cache["k"].shape[1]
-            # sink_tokens = self.sink_size * frame_seqlen
             current_start_frame = current_start // pack['frame_seqlen']
+            with time_block("DiT/RoPE"):
+                roped_query = causal_rope_apply(q, grid_sizes, freqs, current_start_frame, pack).type_as(v)
+                roped_key = causal_rope_apply(k, grid_sizes, freqs, current_start_frame, pack).type_as(v)
 
-            roped_query = causal_rope_apply(q, grid_sizes, freqs, current_start_frame, pack).type_as(v)
-            roped_key = causal_rope_apply(k, grid_sizes, freqs, current_start_frame, pack).type_as(v)
-
-            # 3. KV Cache 更新 (需要按批次进行)
+            # 3. KV cache write + packing for varlen flash attention.
+            # Bucketed as "Warp" because in the paper this is the cost of
+            # maintaining the inter-chunk cache that flow-warp consumes.
             B = pack['sparse_bs'] + pack['dense_bs']
-            
-            batch_indices=pack['batch_indices']
-            local_indices=pack['original_indices']
+            batch_indices = pack['batch_indices']
+            local_indices = pack['original_indices']
+            write_start = pack['write_start']
+            with time_block("DiT/Warp"):
+                start_offsets = write_start[batch_indices]
+                sequence_indices = local_indices + start_offsets
+                kv_cache["k"].index_put_((batch_indices, sequence_indices), roped_key)
+                kv_cache["v"].index_put_((batch_indices, sequence_indices), v)
 
-            # ring_capacity = kv_cache_size - sink_tokens
-            # write_start = torch.where(
-            #     current_start < kv_cache_size,
-            #     current_start,
-            #     sink_tokens + ((current_start - kv_cache_size) % ring_capacity)
-            # )
-            write_start=pack['write_start']
-            # print(sink_tokens,frame_seqlen,current_start,ring_capacity,write_start)
-            # write_start shape: [B], e.g., [10, 20, 30, 40]
-            
-            # 然后，将每个 token 的相对位置加上其所属序列的写入起始位置 (write_start)
-            # 我们使用 batch_indices 从 write_start 中 gather 正确的起始偏移量
-            start_offsets = write_start[batch_indices]
-            sequence_indices = local_indices + start_offsets
-            # sequence_indices shape: [total_tokens]
+                effective_seqlens = pack['effective_seqlens']
+                is_full = pack['is_full']
+                if is_full:
+                    k_packed = kv_cache["k"].reshape(-1, n, d)
+                    v_packed = kv_cache["v"].reshape(-1, n, d)
+                else:
+                    k_valid_list = []
+                    v_valid_list = []
+                    for i in range(B):
+                        seq_len_i = effective_seqlens[i].item()
+                        k_valid_list.append(kv_cache["k"][i, :seq_len_i, :, :])
+                        v_valid_list.append(kv_cache["v"][i, :seq_len_i, :, :])
+                    k_packed = torch.cat(k_valid_list, dim=0)
+                    v_packed = torch.cat(v_valid_list, dim=0)
 
-            # c. 使用 index_put_ 并行地将所有 token 写入 KV Cache
-            # index_put_ 使用我们生成的 (batch, sequence) 索引对，
-            # 从 roped_key 和 v 中按顺序取出 token，并放置到 cache 的正确位置。
-            # 这是一个高效的、原子的 scatter 操作。
-            kv_cache["k"].index_put_((batch_indices, sequence_indices), roped_key)
-            kv_cache["v"].index_put_((batch_indices, sequence_indices), v)
-        
-            # 4. Flash Attention with cu_seqlens
-            # effective_seqlens = torch.minimum(
-            #     current_start + pack['full_seq_len'], # 注意这里是 lengths
-            #     torch.tensor(kv_cache_size, device=current_start.device, dtype=torch.long)
-            # ).to(torch.int32)
-            effective_seqlens=pack['effective_seqlens']
-            # is_full=(effective_seqlens == kv_cache_size).all()
-            is_full=pack['is_full']
+                cu_seqlens_k = pack['cu_seqlens_k']
+                max_seqlen_k = pack['max_seqlen_k']
+                max_seqlen_q = pack['max_seqlen_q']
 
-            # FlashAttention v2 支持 packed Q 和 batched KV Cache
-            # roped_query shape: [3432, 16, 96]
-            # kv_cache["k"] shape: [4, CacheLen, 16, 96]
-            # torch.cuda.synchronize(x.device)
-            # end=time.time()
-            if is_full:
-                k_packed=kv_cache["k"].reshape(-1, n, d)
-                v_packed=kv_cache["v"].reshape(-1, n, d)
-            else:
-                k_valid_list = []
-                v_valid_list = []
-                for i in range(B):
-                    seq_len_i = effective_seqlens[i].item()
-                    # 取出第 i 个 batch 的有效 token，形状为 [seq_len_i, n, d]
-                    k_valid_list.append(kv_cache["k"][i, :seq_len_i, :, :])
-                    v_valid_list.append(kv_cache["v"][i, :seq_len_i, :, :])
-                    
-                # 拼接成展平格式，形状为 [total_k_tokens, n, d]
-                k_packed = torch.cat(k_valid_list, dim=0)
-                v_packed = torch.cat(v_valid_list, dim=0)
+            # 4. Self attention kernel
+            with time_block("DiT/Self Attn"):
+                x = flash_attn_interface.flash_attn_varlen_func(
+                    q=roped_query,
+                    k=k_packed,
+                    v=v_packed,
+                    cu_seqlens_q=pack['cu_seqlens'],
+                    cu_seqlens_k=cu_seqlens_k,
+                    max_seqlen_q=max_seqlen_q,
+                    max_seqlen_k=max_seqlen_k,
+                )
 
-            # torch.cuda.synchronize(x.device)
-            # end1=time.time()
-            # print("k valid",end1-end)
-
-            # 构造 KV 的 cu_seqlens
-            # cu_seqlens_k = torch.cat([
-            #     torch.zeros(1, dtype=torch.int32, device=x.device),
-            #     torch.cumsum(effective_seqlens, dim=0).to(torch.int32)
-            # ])
-            cu_seqlens_k=pack['cu_seqlens_k']
-            
-            # max_seqlen_k = effective_seqlens.max().item()
-            # max_seqlen_q = pack['lengths'].max().item()
-            max_seqlen_k=pack['max_seqlen_k']
-            max_seqlen_q=pack['max_seqlen_q']
-
-            # 统一使用 flash_attn_varlen_func
-            x = flash_attn_interface.flash_attn_varlen_func(
-                q=roped_query,
-                k=k_packed,
-                v=v_packed,
-                cu_seqlens_q=pack['cu_seqlens'],
-                cu_seqlens_k=cu_seqlens_k,
-                max_seqlen_q=max_seqlen_q,
-                max_seqlen_k=max_seqlen_k,
-            )
-
-            x = x.flatten(1)
-            x = self.o(x)
+            # 5. Output linear
+            with time_block("DiT/Linear"):
+                x = x.flatten(1)
+                x = self.o(x)
             return x
 
         # print("entering basic self attn:")
@@ -531,55 +489,43 @@ class CausalWanAttentionBlock(nn.Module):
         """
         use_sparse = False if pack==None else pack['use_sparse']
         if use_sparse:
-            # x shape: [3432, 1536]
-            # e shape: [4, 1, 6, 1536]
-            batch_indices = pack['batch_indices'] # Shape: [3432]
+            batch_indices = pack['batch_indices']
 
-            # 1. 调制 e 和 LayerNorm
-            e_chunks = (self.modulation.unsqueeze(1) + e).chunk(6, dim=2)
-            # e_chunks[i] shape: [4, 1, 1, 1536]
-            
-            # --- Self-Attention前的调制 ---
-            # e0_gathered shape: [3432, 1, 1, 1536] -> [3432, 1536]
-            e0_gathered = e_chunks[0][batch_indices].squeeze(1).squeeze(1)
-            e1_gathered = e_chunks[1][batch_indices].squeeze(1).squeeze(1)
-            
-            norm1_out = self.norm1(x) # Shape: [3432, 1536]
-            attn_x = norm1_out * (1 + e1_gathered) + e0_gathered # Shape: [3432, 1536]
-            
-            # 2. Self-Attention
+            # 1. Modulation chunks + norm1 + pre-attn affine (all linear-ish)
+            with time_block("DiT/Linear"):
+                e_chunks = (self.modulation.unsqueeze(1) + e).chunk(6, dim=2)
+                e0_gathered = e_chunks[0][batch_indices].squeeze(1).squeeze(1)
+                e1_gathered = e_chunks[1][batch_indices].squeeze(1).squeeze(1)
+                norm1_out = self.norm1(x)
+                attn_x = norm1_out * (1 + e1_gathered) + e0_gathered
+
+            # 2. Self-attention (self.self_attn is internally instrumented into
+            # Linear/RoPE/Warp/Self Attn buckets — no wrap here, would double count)
             y = self.self_attn(
                 attn_x,
                 seq_lens, grid_sizes,
                 freqs, block_mask, kv_cache, current_start, current_end,
-                pack=pack) # y shape: [3432, 1536]
+                pack=pack)
 
-            # --- Self-Attention后的残差连接 ---
-            e2_gathered = e_chunks[2][batch_indices].squeeze(1).squeeze(1)
-            x = x + y * e2_gathered # Shape: [3432, 1536]
+            # 3. Post-attn residual + cross-attn (whole call is the bucket)
+            with time_block("DiT/Linear"):
+                e2_gathered = e_chunks[2][batch_indices].squeeze(1).squeeze(1)
+                x = x + y * e2_gathered
 
-            # 3. Cross-Attention & FFN (同样使用 gather)
-            # --- Cross-Attention ---
-            # norm3(x) shape: [3432, 1536]
-            # context shape: [4, L_ctx, 1536]
-            # cross_attn 需要 cu_seqlens 来匹配 packed_x 和 batched_context
-            # 假设 cross_attn 内部已适配
-            cross_attn_out = self.cross_attn(self.norm3(x), context, context_lens, crossattn_cache=crossattn_cache, pack=pack)
-            x = x + cross_attn_out
+            with time_block("DiT/Cross Attn"):
+                cross_attn_out = self.cross_attn(self.norm3(x), context, context_lens, crossattn_cache=crossattn_cache, pack=pack)
+                x = x + cross_attn_out
 
-            # --- FFN前的调制 ---
-            e3_gathered = e_chunks[3][batch_indices].squeeze(1).squeeze(1)
-            e4_gathered = e_chunks[4][batch_indices].squeeze(1).squeeze(1)
-            norm2_out = self.norm2(x)
-            ffn_in = norm2_out * (1 + e4_gathered) + e3_gathered
-            
-            # --- FFN ---
-            ffn_out = self.ffn(ffn_in) # Shape: [3432, 1536]
-            
-            # --- FFN后的残差连接 ---
-            e5_gathered = e_chunks[5][batch_indices].squeeze(1).squeeze(1)
-            x = x + ffn_out * e5_gathered # Shape: [3432, 1536]
-            
+            # 4. FFN modulation + FFN + post-FFN residual
+            with time_block("DiT/Linear"):
+                e3_gathered = e_chunks[3][batch_indices].squeeze(1).squeeze(1)
+                e4_gathered = e_chunks[4][batch_indices].squeeze(1).squeeze(1)
+                norm2_out = self.norm2(x)
+                ffn_in = norm2_out * (1 + e4_gathered) + e3_gathered
+                ffn_out = self.ffn(ffn_in)
+                e5_gathered = e_chunks[5][batch_indices].squeeze(1).squeeze(1)
+                x = x + ffn_out * e5_gathered
+
             return x
         #torch.cuda.synchronize(x.device)
         start_selfattn_block_time=time.time()
@@ -811,6 +757,10 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         self.count=0
         self.flow_guidance_cache=None
 
+        # Per-submodule profiling: when set to a dict by gpu.py, `time_block`
+        # calls inside forward() accumulate into it. None disables profiling.
+        self.profile_timings = None
+
     def _set_gradient_checkpointing(self, module, value=False):
         self.gradient_checkpointing = value
 
@@ -982,6 +932,9 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         # start=time.time()
 
         # ===================== 1. 将输入拆分为 Sparse 和 Dense 两部分 =====================
+        # The whole pack-setup block is the "Warp" overhead in MotionFlow — building
+        # gather indices, cu_seqlens, write_starts etc. that the cache warp relies on.
+        _dit_warp_setup = begin_segment("DiT/Warp") if use_sparse else None
         if use_sparse:
             B, S, C = x.shape
             dense_bs = B - sparse_bs
@@ -1098,10 +1051,7 @@ class CausalWanModel(ModelMixin, ConfigMixin):
                 'mask': occ_mask_sparse # 传递给RoPE
             })
             x = x_flat
-
-        # torch.cuda.synchronize(x.device)
-        # end=time.time()
-        # print("sparse init",end-start) #0.0006s
+        end_segment(_dit_warp_setup)
 
         for block_index, block in enumerate(self.blocks):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
@@ -1139,59 +1089,43 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         # torch.cuda.synchronize(x.device)
         # start=time.time()
 
+        # Head call (forward_sparse is a Linear+norm op) plus the scatter/unpack
+        # that reassembles per-sample dense tensors from packed sparse tokens.
+        # We split: head -> Linear bucket, scatter/unpack -> Warp bucket.
         if use_sparse:
-            x=self.head.forward_sparse(x,e_head,pack)
-            sparse_bs = pack['sparse_bs']               # 2
-            dense_bs = pack['dense_bs']                 # 2
-            num_sparse_tokens = pack['num_sparse_tokens'] # 156
-            full_seq_len = pack['full_seq_len']         # 1560
-            out_channels = x.shape[-1]                  # 64
-            B = sparse_bs + dense_bs                    # 4
-            
-            # --- 1. 并行解包稀疏部分 (Batched Scatter) ---
+            with time_block("DiT/Linear"):
+                x = self.head.forward_sparse(x, e_head, pack)
+            _dit_warp_unpack = begin_segment("DiT/Warp")
+            sparse_bs = pack['sparse_bs']
+            dense_bs = pack['dense_bs']
+            num_sparse_tokens = pack['num_sparse_tokens']
+            full_seq_len = pack['full_seq_len']
+            out_channels = x.shape[-1]
+            B = sparse_bs + dense_bs
+
             x_sparse_full = torch.zeros(sparse_bs, full_seq_len, out_channels, device=x.device, dtype=x.dtype)
             if sparse_bs > 0:
-                # a. 从扁平输出中提取所有稀疏token
-                # Total sparse tokens = 2 * 156 = 312
                 num_total_sparse = sparse_bs * num_sparse_tokens
                 x_sparse_packed = x[:num_total_sparse].view(sparse_bs, num_sparse_tokens, out_channels)
-                # x_sparse_packed shape: [2, 156, 64]
-
-                # b. 准备用于 scatter 的索引
-                # pack['sparse_indices'] shape: [2, 156]
-                # 我们需要将其扩展以匹配 x_sparse_packed 的维度
                 expanded_indices = pack['sparse_indices'].unsqueeze(-1).expand(-1, -1, out_channels)
-                # expanded_indices shape: [2, 156, 64]
-
-                # c. 执行批次化的 scatter 操作
-                # 将 x_sparse_packed 中的 token 填充到 x_sparse_full 的正确位置
                 x_sparse_full.scatter_(
-                    dim=1, # 沿着序列长度维度 (1560) 进行 scatter
-                    index=expanded_indices, 
-                    src=x_sparse_packed
+                    dim=1,
+                    index=expanded_indices,
+                    src=x_sparse_packed,
                 )
-                # x_sparse_full shape: [2, 1560, 64], 包含了被正确放置的稀疏 token 和大量 0
 
-            # --- 2. 并行解包密集部分 (Reshape) ---
             x_dense_full = torch.empty(dense_bs, full_seq_len, out_channels, device=x.device, dtype=x.dtype)
             if dense_bs > 0:
-                # a. 从扁平输出中提取所有密集token
                 num_total_sparse = sparse_bs * num_sparse_tokens
                 x_dense_packed = x[num_total_sparse:]
-                
-                # b. 直接 reshape 成目标形状
                 x_dense_full = x_dense_packed.view(dense_bs, full_seq_len, out_channels)
-                # x_dense_full shape: [2, 1560, 64]
 
-            # --- 3. 最终合并 ---
-            # 将稀疏和密集的结果沿着批次维度拼接起来
             x = torch.cat([x_sparse_full, x_dense_full], dim=0)
-            # x shape: [4, 1560, 64]
-
-            # 添加一个 singleton 维度以匹配非稀疏分支的输出格式 [B, 1, S, C]
             x = x.unsqueeze(1)
+            end_segment(_dit_warp_unpack)
         else:
-            x = self.head(x, e_head)
+            with time_block("DiT/Linear"):
+                x = self.head(x, e_head)
 
         # print("head",x.shape)
 
@@ -1210,19 +1144,20 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         # start=time.time()
 
         # ===================== 4. 光流 Warp 引导 (仅作用于前两个 chunk) =====================
-        if use_sparse and sparse_bs>0:    
-            b, s, _, h, w = x.shape
-            x = x.squeeze(2)
-            flow = latent_flow_data["flow"][:sparse_bs]
-            occ_mask = latent_flow_data["mask"][:sparse_bs]
-            x_prev = self.flow_guidance_cache[:sparse_bs]
-            x_prev_image = x_prev.squeeze(2)
-            
-            x_warped = universal_flow_warp(x_prev_image.float(), flow.float()).to(dtype=x.dtype)
-            occ_mask_expanded = occ_mask.view(sparse_bs, 1, h, w).expand(sparse_bs, s, h, w)
-            x_final = torch.where(occ_mask_expanded, x[:sparse_bs], x_warped)
-            x[:sparse_bs] = x_final
-            x=x.unsqueeze(2)
+        if use_sparse and sparse_bs>0:
+            with time_block("DiT/Warp"):
+                b, s, _, h, w = x.shape
+                x = x.squeeze(2)
+                flow = latent_flow_data["flow"][:sparse_bs]
+                occ_mask = latent_flow_data["mask"][:sparse_bs]
+                x_prev = self.flow_guidance_cache[:sparse_bs]
+                x_prev_image = x_prev.squeeze(2)
+
+                x_warped = universal_flow_warp(x_prev_image.float(), flow.float()).to(dtype=x.dtype)
+                occ_mask_expanded = occ_mask.view(sparse_bs, 1, h, w).expand(sparse_bs, s, h, w)
+                x_final = torch.where(occ_mask_expanded, x[:sparse_bs], x_warped)
+                x[:sparse_bs] = x_final
+                x = x.unsqueeze(2)
             
         if latent_flow_data is not None: 
             self.flow_guidance_cache = x
@@ -1373,10 +1308,14 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         *args,
         **kwargs
     ):
-        if kwargs.get('kv_cache', None) is not None:
-            return self._forward_inference(*args, **kwargs)
-        else:
-            return self._forward_train(*args, **kwargs)
+        set_active_timings(self.profile_timings)
+        try:
+            if kwargs.get('kv_cache', None) is not None:
+                return self._forward_inference(*args, **kwargs)
+            else:
+                return self._forward_train(*args, **kwargs)
+        finally:
+            clear_active_timings()
 
     def unpatchify(self, x, grid_sizes):
         r"""

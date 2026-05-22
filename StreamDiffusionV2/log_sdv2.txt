@@ -1,0 +1,563 @@
+2026-05-18 08:50:53 - root - INFO - Input video tensor shape: torch.Size([1, 3, 254, 480, 832])
+2026-05-18 08:50:53 - root - INFO - Preparing for optical flow calculation with model: none
+2026-05-18 08:50:53 - OpticalFlowCalculator - INFO - Using occlusion mask generation method: 'quantile'
+2026-05-18 08:50:53 - OpticalFlowCalculator - INFO - Optical flow calculation is disabled.
+2026-05-18 08:50:53,086 - SingleGPUInference - INFO - Initializing CausalStreamInferencePipeline...
+Cannot initialize model with low cpu memory usage because `accelerate` was not found in the environment. Defaulting to `low_cpu_mem_usage=False`. It is strongly recommended to install `accelerate` for faster and less memory-intense model loading. You can do so with: 
+```
+pip install accelerate
+```
+.
+Skipping Text Encoder initialization, will use cached embedding.
+/workspace/video-breakdown/StreamDiffusionV2/../deps/sige3d/gather2d.py:39: UserWarning: Change the block size from (4, 4) to (3, 3)
+  warnings.warn("Change the block size from (%d, %d) to (%d, %d)" % (*block_size, b0, b1))
+2026-05-18 08:51:05 - root - INFO - loading /workspace/video-breakdown/StreamDiffusionV2/wan_models/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth
+****************************************
+Load Model Weight Successfully!!!
+****************************************
+KV inference with 1 frames per block
+2026-05-18 08:51:06,434 - SingleGPUInference - INFO - Single GPU inference pipeline manager initialized
+2026-05-18 08:51:06,434 - SingleGPUInference - INFO - Using WanVAE encoder + WanVAE decoder.
+2026-05-18 08:51:06,434 - SingleGPUInference - INFO - Loading checkpoint from ckpts/wan_causal_dmd_v2v/model.pt
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Consumer started. Replicating original inference logic with detailed timing.
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Producer thread started.
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Real-time simulation enabled: Target Producer FPS=30, Chunk Size=4, Target Interval=0.1333s
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Saver thread started.
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Consumer: Waiting for initial data block...
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Producer: Initial 5-frame data block placed in queue.0.49579882621765137
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Consumer: Got initial data block. 
+2026-05-18 08:51:09 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.3628s
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Chunk 1: calculating flow Frame 4 -> 8
+Attempting to load cached text embedding from './text_cache/cached_text_embedding_A highly detailed fu.pt'...
+Successfully loaded and prepared cached text embedding.
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Producer: Real data chunk 1/63 placed in queue. 
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Queue len: 1
+2026-05-18 08:51:09 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.4106s
+2026-05-18 08:51:09 - ParallelOrchestrator - INFO - Chunk 2: calculating flow Frame 8 -> 12
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Producer: Real data chunk 2/63 placed in queue. 
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Queue len: 2
+2026-05-18 08:51:10 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.4325s
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Chunk 3: calculating flow Frame 12 -> 16
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Producer: Real data chunk 3/63 placed in queue. 
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Queue len: 3
+2026-05-18 08:51:10 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.5155s
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Chunk 4: calculating flow Frame 16 -> 20
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Producer: Real data chunk 4/63 placed in queue. 
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Queue len: 4
+2026-05-18 08:51:10 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.5699s
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Chunk 5: calculating flow Frame 20 -> 24
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Producer: Real data chunk 5/63 placed in queue. 
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:10 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.6460s
+2026-05-18 08:51:10 - ParallelOrchestrator - INFO - Chunk 6: calculating flow Frame 24 -> 28
+2026-05-18 08:51:11 - ParallelOrchestrator - INFO - Consumer: Initial block processed and enqueued for saving.
+2026-05-18 08:51:11 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 0, Iter Time: 2.4670s, FPS: 1.6214
+2026-05-18 08:51:11 - ParallelOrchestrator - INFO - Producer: Real data chunk 6/63 placed in queue. 
+2026-05-18 08:51:11 - ParallelOrchestrator - INFO - Consumer: Got data block 1.
+2026-05-18 08:51:11 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:11 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 1.5348s
+2026-05-18 08:51:11 - ParallelOrchestrator - INFO - Chunk 7: calculating flow Frame 28 -> 32
+scatter_total=0 B
+2026-05-18 08:51:12 - ParallelOrchestrator - INFO - Consumer: Got data block 2.
+2026-05-18 08:51:12 - ParallelOrchestrator - INFO - Producer: Real data chunk 7/63 placed in queue. 
+2026-05-18 08:51:12 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:12 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 1.8592s
+2026-05-18 08:51:12 - ParallelOrchestrator - INFO - Chunk 8: calculating flow Frame 32 -> 36
+scatter_total=0 B
+2026-05-18 08:51:12 - ParallelOrchestrator - INFO - Consumer: Got data block 3.
+2026-05-18 08:51:12 - ParallelOrchestrator - INFO - Producer: Real data chunk 8/63 placed in queue. 
+2026-05-18 08:51:12 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:12 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 2.2080s
+2026-05-18 08:51:12 - ParallelOrchestrator - INFO - Chunk 9: calculating flow Frame 36 -> 40
+scatter_total=0 B
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Consumer: Got data block 4.
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Producer: Real data chunk 9/63 placed in queue. 
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:13 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 2.5415s
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Chunk 10: calculating flow Frame 40 -> 44
+scatter_total=0 B
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 1, Iter Time: 2.1746s, FPS: 1.8395
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 1, Iter Time: 2.1746s, FPS: 1.8394
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Consumer: Got data block 5.
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Producer: Real data chunk 10/63 placed in queue. 
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:13 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 3.1761s
+2026-05-18 08:51:13 - ParallelOrchestrator - INFO - Chunk 11: calculating flow Frame 44 -> 48
+scatter_total=0 B
+2026-05-18 08:51:14 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 2, Iter Time: 0.7663s, FPS: 5.2199
+2026-05-18 08:51:14 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 2, Iter Time: 0.7663s, FPS: 5.2198
+2026-05-18 08:51:14 - ParallelOrchestrator - INFO - Consumer: Got data block 6.
+2026-05-18 08:51:14 - ParallelOrchestrator - INFO - Producer: Real data chunk 11/63 placed in queue. 
+2026-05-18 08:51:14 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:14 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 3.8090s
+2026-05-18 08:51:14 - ParallelOrchestrator - INFO - Chunk 12: calculating flow Frame 48 -> 52
+scatter_total=0 B
+2026-05-18 08:51:15 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 3, Iter Time: 0.7558s, FPS: 5.2921
+2026-05-18 08:51:15 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 3, Iter Time: 0.7558s, FPS: 5.2922
+2026-05-18 08:51:15 - ParallelOrchestrator - INFO - Consumer: Got data block 7.
+2026-05-18 08:51:15 - ParallelOrchestrator - INFO - Producer: Real data chunk 12/63 placed in queue. 
+2026-05-18 08:51:15 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:15 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 4.4316s
+2026-05-18 08:51:15 - ParallelOrchestrator - INFO - Chunk 13: calculating flow Frame 52 -> 56
+scatter_total=0 B
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 4, Iter Time: 0.7589s, FPS: 5.2710
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 4, Iter Time: 0.7590s, FPS: 5.2699
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Consumer: Got data block 8.
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Producer: Real data chunk 13/63 placed in queue. 
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:16 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 5.0574s
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Chunk 14: calculating flow Frame 56 -> 60
+scatter_total=0 B
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 5, Iter Time: 0.7643s, FPS: 5.2337
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 5, Iter Time: 0.7643s, FPS: 5.2337
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Consumer: Got data block 9.
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Producer: Real data chunk 14/63 placed in queue. 
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:16 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 5.6883s
+2026-05-18 08:51:16 - ParallelOrchestrator - INFO - Chunk 15: calculating flow Frame 60 -> 64
+scatter_total=0 B
+2026-05-18 08:51:17 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 6, Iter Time: 0.7669s, FPS: 5.2156
+2026-05-18 08:51:17 - ParallelOrchestrator - INFO - Consumer: Got data block 10.
+2026-05-18 08:51:17 - ParallelOrchestrator - INFO - Producer: Real data chunk 15/63 placed in queue. 
+2026-05-18 08:51:17 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:17 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 6.3215s
+2026-05-18 08:51:17 - ParallelOrchestrator - INFO - Chunk 16: calculating flow Frame 64 -> 68
+2026-05-18 08:51:17 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 6, Iter Time: 0.7677s, FPS: 5.2102
+scatter_total=0 B
+2026-05-18 08:51:18 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 7, Iter Time: 0.7618s, FPS: 5.2508
+2026-05-18 08:51:18 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 7, Iter Time: 0.7610s, FPS: 5.2563
+2026-05-18 08:51:18 - ParallelOrchestrator - INFO - Consumer: Got data block 11.
+2026-05-18 08:51:18 - ParallelOrchestrator - INFO - Producer: Real data chunk 16/63 placed in queue. 
+2026-05-18 08:51:18 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:18 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 6.9503s
+2026-05-18 08:51:18 - ParallelOrchestrator - INFO - Chunk 17: calculating flow Frame 68 -> 72
+scatter_total=0 B
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 8, Iter Time: 0.7632s, FPS: 5.2412
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Consumer: Got data block 12.
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 8, Iter Time: 0.7633s, FPS: 5.2403
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Producer: Real data chunk 17/63 placed in queue. 
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:19 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 7.5801s
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Chunk 18: calculating flow Frame 72 -> 76
+scatter_total=0 B
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 9, Iter Time: 0.7635s, FPS: 5.2387
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Producer: Real data chunk 18/63 placed in queue. 
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Consumer: Got data block 13.
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 9, Iter Time: 0.7637s, FPS: 5.2376
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:19 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 8.2105s
+2026-05-18 08:51:19 - ParallelOrchestrator - INFO - Chunk 19: calculating flow Frame 76 -> 80
+scatter_total=0 B
+2026-05-18 08:51:20 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 10, Iter Time: 0.7637s, FPS: 5.2374
+2026-05-18 08:51:20 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 10, Iter Time: 0.7634s, FPS: 5.2398
+2026-05-18 08:51:20 - ParallelOrchestrator - INFO - Consumer: Got data block 14.
+2026-05-18 08:51:20 - ParallelOrchestrator - INFO - Producer: Real data chunk 19/63 placed in queue. 
+2026-05-18 08:51:20 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:20 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 8.8408s
+2026-05-18 08:51:20 - ParallelOrchestrator - INFO - Chunk 20: calculating flow Frame 80 -> 84
+scatter_total=0 B
+2026-05-18 08:51:21 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 11, Iter Time: 0.7636s, FPS: 5.2386
+2026-05-18 08:51:21 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 11, Iter Time: 0.7637s, FPS: 5.2379
+2026-05-18 08:51:21 - ParallelOrchestrator - INFO - Consumer: Got data block 15.
+2026-05-18 08:51:21 - ParallelOrchestrator - INFO - Producer: Real data chunk 20/63 placed in queue. 
+2026-05-18 08:51:21 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:21 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 9.4712s
+2026-05-18 08:51:21 - ParallelOrchestrator - INFO - Chunk 21: calculating flow Frame 84 -> 88
+scatter_total=0 B
+2026-05-18 08:51:22 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 12, Iter Time: 0.7635s, FPS: 5.2393
+2026-05-18 08:51:22 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 12, Iter Time: 0.7633s, FPS: 5.2405
+2026-05-18 08:51:22 - ParallelOrchestrator - INFO - Producer: Real data chunk 21/63 placed in queue. 
+2026-05-18 08:51:22 - ParallelOrchestrator - INFO - Consumer: Got data block 16.
+2026-05-18 08:51:22 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:22 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 10.1011s
+2026-05-18 08:51:22 - ParallelOrchestrator - INFO - Chunk 22: calculating flow Frame 88 -> 92
+scatter_total=0 B
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 13, Iter Time: 0.7567s, FPS: 5.2864
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 13, Iter Time: 0.7568s, FPS: 5.2857
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Producer: Real data chunk 22/63 placed in queue. 
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Consumer: Got data block 17.
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:23 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 10.7249s
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Chunk 23: calculating flow Frame 92 -> 96
+scatter_total=0 B
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 14, Iter Time: 0.7563s, FPS: 5.2886
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Consumer: Got data block 18.
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 14, Iter Time: 0.7565s, FPS: 5.2875
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Producer: Real data chunk 23/63 placed in queue. 
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:23 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 11.3478s
+2026-05-18 08:51:23 - ParallelOrchestrator - INFO - Chunk 24: calculating flow Frame 96 -> 100
+scatter_total=0 B
+2026-05-18 08:51:24 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 15, Iter Time: 0.7573s, FPS: 5.2819
+2026-05-18 08:51:24 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 15, Iter Time: 0.7571s, FPS: 5.2831
+2026-05-18 08:51:24 - ParallelOrchestrator - INFO - Consumer: Got data block 19.
+2026-05-18 08:51:24 - ParallelOrchestrator - INFO - Producer: Real data chunk 24/63 placed in queue. 
+2026-05-18 08:51:24 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:24 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 11.9716s
+2026-05-18 08:51:24 - ParallelOrchestrator - INFO - Chunk 25: calculating flow Frame 100 -> 104
+scatter_total=0 B
+2026-05-18 08:51:25 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 16, Iter Time: 0.7577s, FPS: 5.2789
+2026-05-18 08:51:25 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 16, Iter Time: 0.7577s, FPS: 5.2790
+2026-05-18 08:51:25 - ParallelOrchestrator - INFO - Consumer: Got data block 20.
+2026-05-18 08:51:25 - ParallelOrchestrator - INFO - Producer: Real data chunk 25/63 placed in queue. 
+2026-05-18 08:51:25 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:25 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 12.5960s
+2026-05-18 08:51:25 - ParallelOrchestrator - INFO - Chunk 26: calculating flow Frame 104 -> 108
+scatter_total=0 B
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 17, Iter Time: 0.7606s, FPS: 5.2588
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Consumer: Got data block 21.
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 17, Iter Time: 0.7608s, FPS: 5.2578
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Producer: Real data chunk 26/63 placed in queue. 
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:26 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 13.2232s
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Chunk 27: calculating flow Frame 108 -> 112
+scatter_total=0 B
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 18, Iter Time: 0.7605s, FPS: 5.2599
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 18, Iter Time: 0.7603s, FPS: 5.2610
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Consumer: Got data block 22.
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Producer: Real data chunk 27/63 placed in queue. 
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:26 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 13.8502s
+2026-05-18 08:51:26 - ParallelOrchestrator - INFO - Chunk 28: calculating flow Frame 112 -> 116
+scatter_total=0 B
+2026-05-18 08:51:27 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 19, Iter Time: 0.7604s, FPS: 5.2604
+2026-05-18 08:51:27 - ParallelOrchestrator - INFO - Producer: Real data chunk 28/63 placed in queue. 
+2026-05-18 08:51:27 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:27 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 19, Iter Time: 0.7605s, FPS: 5.2596
+2026-05-18 08:51:27 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 14.4767s
+2026-05-18 08:51:27 - ParallelOrchestrator - INFO - Consumer: Got data block 23.
+2026-05-18 08:51:27 - ParallelOrchestrator - INFO - Chunk 29: calculating flow Frame 116 -> 120
+scatter_total=0 B
+2026-05-18 08:51:28 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 20, Iter Time: 0.7613s, FPS: 5.2543
+2026-05-18 08:51:28 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 20, Iter Time: 0.7610s, FPS: 5.2559
+2026-05-18 08:51:28 - ParallelOrchestrator - INFO - Consumer: Got data block 24.
+2026-05-18 08:51:28 - ParallelOrchestrator - INFO - Producer: Real data chunk 29/63 placed in queue. 
+2026-05-18 08:51:28 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:28 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 15.1050s
+2026-05-18 08:51:28 - ParallelOrchestrator - INFO - Chunk 30: calculating flow Frame 120 -> 124
+scatter_total=0 B
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 21, Iter Time: 0.7614s, FPS: 5.2537
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 21, Iter Time: 0.7615s, FPS: 5.2527
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Consumer: Got data block 25.
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Producer: Real data chunk 30/63 placed in queue. 
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:29 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 15.7336s
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Chunk 31: calculating flow Frame 124 -> 128
+scatter_total=0 B
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 22, Iter Time: 0.7607s, FPS: 5.2586
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Consumer: Got data block 26.
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 22, Iter Time: 0.7608s, FPS: 5.2576
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Producer: Real data chunk 31/63 placed in queue. 
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:29 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 16.3605s
+2026-05-18 08:51:29 - ParallelOrchestrator - INFO - Chunk 32: calculating flow Frame 128 -> 132
+scatter_total=0 B
+2026-05-18 08:51:30 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 23, Iter Time: 0.7611s, FPS: 5.2554
+2026-05-18 08:51:30 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 23, Iter Time: 0.7610s, FPS: 5.2564
+2026-05-18 08:51:30 - ParallelOrchestrator - INFO - Consumer: Got data block 27.
+2026-05-18 08:51:30 - ParallelOrchestrator - INFO - Producer: Real data chunk 32/63 placed in queue. 
+2026-05-18 08:51:30 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:30 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 16.9886s
+2026-05-18 08:51:30 - ParallelOrchestrator - INFO - Chunk 33: calculating flow Frame 132 -> 136
+scatter_total=0 B
+2026-05-18 08:51:31 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 24, Iter Time: 0.7623s, FPS: 5.2471
+2026-05-18 08:51:31 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 24, Iter Time: 0.7623s, FPS: 5.2472
+2026-05-18 08:51:31 - ParallelOrchestrator - INFO - Consumer: Got data block 28.
+2026-05-18 08:51:31 - ParallelOrchestrator - INFO - Producer: Real data chunk 33/63 placed in queue. 
+2026-05-18 08:51:31 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:31 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 17.6175s
+2026-05-18 08:51:31 - ParallelOrchestrator - INFO - Chunk 34: calculating flow Frame 136 -> 140
+scatter_total=0 B
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 25, Iter Time: 0.7621s, FPS: 5.2485
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 25, Iter Time: 0.7621s, FPS: 5.2484
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Consumer: Got data block 29.
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Producer: Real data chunk 34/63 placed in queue. 
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:32 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 18.2546s
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Chunk 35: calculating flow Frame 140 -> 144
+scatter_total=0 B
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 26, Iter Time: 0.7661s, FPS: 5.2212
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 26, Iter Time: 0.7661s, FPS: 5.2214
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Consumer: Got data block 30.
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Producer: Real data chunk 35/63 placed in queue. 
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:32 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 18.8792s
+2026-05-18 08:51:32 - ParallelOrchestrator - INFO - Chunk 36: calculating flow Frame 144 -> 148
+scatter_total=0 B
+2026-05-18 08:51:33 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 27, Iter Time: 0.7637s, FPS: 5.2379
+2026-05-18 08:51:33 - ParallelOrchestrator - INFO - Consumer: Got data block 31.
+2026-05-18 08:51:33 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 27, Iter Time: 0.7638s, FPS: 5.2370
+2026-05-18 08:51:33 - ParallelOrchestrator - INFO - Producer: Real data chunk 36/63 placed in queue. 
+2026-05-18 08:51:33 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:33 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 19.5094s
+2026-05-18 08:51:33 - ParallelOrchestrator - INFO - Chunk 37: calculating flow Frame 148 -> 152
+scatter_total=0 B
+2026-05-18 08:51:34 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 28, Iter Time: 0.7639s, FPS: 5.2365
+2026-05-18 08:51:34 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 28, Iter Time: 0.7637s, FPS: 5.2374
+2026-05-18 08:51:34 - ParallelOrchestrator - INFO - Consumer: Got data block 32.
+2026-05-18 08:51:34 - ParallelOrchestrator - INFO - Producer: Real data chunk 37/63 placed in queue. 
+2026-05-18 08:51:34 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:34 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 20.1401s
+2026-05-18 08:51:34 - ParallelOrchestrator - INFO - Chunk 38: calculating flow Frame 152 -> 156
+scatter_total=0 B
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 29, Iter Time: 0.7649s, FPS: 5.2295
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 29, Iter Time: 0.7649s, FPS: 5.2295
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Consumer: Got data block 33.
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Producer: Real data chunk 38/63 placed in queue. 
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:35 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 20.7715s
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Chunk 39: calculating flow Frame 156 -> 160
+scatter_total=0 B
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 30, Iter Time: 0.7634s, FPS: 5.2400
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Consumer: Got data block 34.
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Producer: Real data chunk 39/63 placed in queue. 
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 30, Iter Time: 0.7637s, FPS: 5.2375
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:35 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 21.4017s
+2026-05-18 08:51:35 - ParallelOrchestrator - INFO - Chunk 40: calculating flow Frame 160 -> 164
+scatter_total=0 B
+2026-05-18 08:51:36 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 31, Iter Time: 0.7655s, FPS: 5.2254
+2026-05-18 08:51:36 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 31, Iter Time: 0.7651s, FPS: 5.2280
+2026-05-18 08:51:36 - ParallelOrchestrator - INFO - Consumer: Got data block 35.
+2026-05-18 08:51:36 - ParallelOrchestrator - INFO - Producer: Real data chunk 40/63 placed in queue. 
+2026-05-18 08:51:36 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:36 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 22.0336s
+2026-05-18 08:51:36 - ParallelOrchestrator - INFO - Chunk 41: calculating flow Frame 164 -> 168
+scatter_total=0 B
+2026-05-18 08:51:37 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 32, Iter Time: 0.7660s, FPS: 5.2219
+2026-05-18 08:51:37 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 32, Iter Time: 0.7660s, FPS: 5.2218
+2026-05-18 08:51:37 - ParallelOrchestrator - INFO - Consumer: Got data block 36.
+2026-05-18 08:51:37 - ParallelOrchestrator - INFO - Producer: Real data chunk 41/63 placed in queue. 
+2026-05-18 08:51:37 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:37 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 22.6663s
+2026-05-18 08:51:37 - ParallelOrchestrator - INFO - Chunk 42: calculating flow Frame 168 -> 172
+scatter_total=0 B
+2026-05-18 08:51:38 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 33, Iter Time: 0.7672s, FPS: 5.2141
+2026-05-18 08:51:38 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 33, Iter Time: 0.7671s, FPS: 5.2142
+2026-05-18 08:51:38 - ParallelOrchestrator - INFO - Consumer: Got data block 37.
+2026-05-18 08:51:38 - ParallelOrchestrator - INFO - Producer: Real data chunk 42/63 placed in queue. 
+2026-05-18 08:51:38 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:38 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 23.3003s
+2026-05-18 08:51:38 - ParallelOrchestrator - INFO - Chunk 43: calculating flow Frame 172 -> 176
+scatter_total=0 B
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 34, Iter Time: 0.7671s, FPS: 5.2142
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Producer: Real data chunk 43/63 placed in queue. 
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 34, Iter Time: 0.7672s, FPS: 5.2138
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Consumer: Got data block 38.
+2026-05-18 08:51:39 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 23.9335s
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Chunk 44: calculating flow Frame 176 -> 180
+scatter_total=0 B
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 35, Iter Time: 0.7669s, FPS: 5.2160
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Consumer: Got data block 39.
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 35, Iter Time: 0.7670s, FPS: 5.2154
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Producer: Real data chunk 44/63 placed in queue. 
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:39 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 24.5671s
+2026-05-18 08:51:39 - ParallelOrchestrator - INFO - Chunk 45: calculating flow Frame 180 -> 184
+scatter_total=0 B
+2026-05-18 08:51:40 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 36, Iter Time: 0.7687s, FPS: 5.2038
+2026-05-18 08:51:40 - ParallelOrchestrator - INFO - Producer: Real data chunk 45/63 placed in queue. 
+2026-05-18 08:51:40 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:40 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 25.2020s
+2026-05-18 08:51:40 - ParallelOrchestrator - INFO - Chunk 46: calculating flow Frame 184 -> 188
+2026-05-18 08:51:40 - ParallelOrchestrator - INFO - Consumer: Got data block 40.
+2026-05-18 08:51:40 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 36, Iter Time: 0.7689s, FPS: 5.2020
+scatter_total=0 B
+2026-05-18 08:51:41 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 37, Iter Time: 0.7647s, FPS: 5.2310
+2026-05-18 08:51:41 - ParallelOrchestrator - INFO - Producer: Real data chunk 46/63 placed in queue. 
+2026-05-18 08:51:41 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:41 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 25.8333s
+2026-05-18 08:51:41 - ParallelOrchestrator - INFO - Chunk 47: calculating flow Frame 188 -> 192
+2026-05-18 08:51:41 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 37, Iter Time: 0.7645s, FPS: 5.2321
+2026-05-18 08:51:41 - ParallelOrchestrator - INFO - Consumer: Got data block 41.
+scatter_total=0 B
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 38, Iter Time: 0.7681s, FPS: 5.2079
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Consumer: Got data block 42.
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Producer: Real data chunk 47/63 placed in queue. 
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 38, Iter Time: 0.7682s, FPS: 5.2070
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:42 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 26.4688s
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Chunk 48: calculating flow Frame 192 -> 196
+scatter_total=0 B
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 39, Iter Time: 0.7682s, FPS: 5.2071
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 39, Iter Time: 0.7678s, FPS: 5.2096
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Consumer: Got data block 43.
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Producer: Real data chunk 48/63 placed in queue. 
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:42 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 27.1036s
+2026-05-18 08:51:42 - ParallelOrchestrator - INFO - Chunk 49: calculating flow Frame 196 -> 200
+scatter_total=0 B
+2026-05-18 08:51:43 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 40, Iter Time: 0.7679s, FPS: 5.2089
+2026-05-18 08:51:43 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 40, Iter Time: 0.7679s, FPS: 5.2093
+2026-05-18 08:51:43 - ParallelOrchestrator - INFO - Consumer: Got data block 44.
+2026-05-18 08:51:43 - ParallelOrchestrator - INFO - Producer: Real data chunk 49/63 placed in queue. 
+2026-05-18 08:51:43 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:43 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 27.7382s
+2026-05-18 08:51:43 - ParallelOrchestrator - INFO - Chunk 50: calculating flow Frame 200 -> 204
+scatter_total=0 B
+2026-05-18 08:51:44 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 41, Iter Time: 0.7702s, FPS: 5.1935
+2026-05-18 08:51:44 - ParallelOrchestrator - INFO - Consumer: Got data block 45.
+2026-05-18 08:51:44 - ParallelOrchestrator - INFO - Producer: Real data chunk 50/63 placed in queue. 
+2026-05-18 08:51:44 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:44 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 28.3748s
+2026-05-18 08:51:44 - ParallelOrchestrator - INFO - Chunk 51: calculating flow Frame 204 -> 208
+2026-05-18 08:51:44 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 41, Iter Time: 0.7712s, FPS: 5.1868
+scatter_total=0 B
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 42, Iter Time: 0.7696s, FPS: 5.1972
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Consumer: Got data block 46.
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Producer: Real data chunk 51/63 placed in queue. 
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 42, Iter Time: 0.7693s, FPS: 5.1996
+2026-05-18 08:51:45 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 29.0114s
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Chunk 52: calculating flow Frame 208 -> 212
+scatter_total=0 B
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 43, Iter Time: 0.7720s, FPS: 5.1813
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 43, Iter Time: 0.7714s, FPS: 5.1852
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Consumer: Got data block 47.
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Producer: Real data chunk 52/63 placed in queue. 
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:45 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 29.6502s
+2026-05-18 08:51:45 - ParallelOrchestrator - INFO - Chunk 53: calculating flow Frame 212 -> 216
+scatter_total=0 B
+2026-05-18 08:51:46 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 44, Iter Time: 0.7702s, FPS: 5.1937
+2026-05-18 08:51:46 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 44, Iter Time: 0.7702s, FPS: 5.1935
+2026-05-18 08:51:46 - ParallelOrchestrator - INFO - Consumer: Got data block 48.
+2026-05-18 08:51:46 - ParallelOrchestrator - INFO - Producer: Real data chunk 53/63 placed in queue. 
+2026-05-18 08:51:46 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:46 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 30.2874s
+2026-05-18 08:51:46 - ParallelOrchestrator - INFO - Chunk 54: calculating flow Frame 216 -> 220
+scatter_total=0 B
+2026-05-18 08:51:47 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 45, Iter Time: 0.7732s, FPS: 5.1735
+2026-05-18 08:51:47 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 45, Iter Time: 0.7731s, FPS: 5.1743
+2026-05-18 08:51:47 - ParallelOrchestrator - INFO - Consumer: Got data block 49.
+2026-05-18 08:51:47 - ParallelOrchestrator - INFO - Producer: Real data chunk 54/63 placed in queue. 
+2026-05-18 08:51:47 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:47 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 30.9265s
+2026-05-18 08:51:47 - ParallelOrchestrator - INFO - Chunk 55: calculating flow Frame 220 -> 224
+scatter_total=0 B
+2026-05-18 08:51:48 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 46, Iter Time: 0.7716s, FPS: 5.1840
+2026-05-18 08:51:48 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 46, Iter Time: 0.7716s, FPS: 5.1843
+2026-05-18 08:51:48 - ParallelOrchestrator - INFO - Consumer: Got data block 50.
+2026-05-18 08:51:48 - ParallelOrchestrator - INFO - Producer: Real data chunk 55/63 placed in queue. 
+2026-05-18 08:51:48 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:48 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 31.5648s
+2026-05-18 08:51:48 - ParallelOrchestrator - INFO - Chunk 56: calculating flow Frame 224 -> 228
+scatter_total=0 B
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 47, Iter Time: 0.7707s, FPS: 5.1902
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 47, Iter Time: 0.7707s, FPS: 5.1900
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Consumer: Got data block 51.
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Producer: Real data chunk 56/63 placed in queue. 
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:49 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 32.2021s
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Chunk 57: calculating flow Frame 228 -> 232
+scatter_total=0 B
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 48, Iter Time: 0.7710s, FPS: 5.1883
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 48, Iter Time: 0.7710s, FPS: 5.1883
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Consumer: Got data block 52.
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Producer: Real data chunk 57/63 placed in queue. 
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:49 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 32.8398s
+2026-05-18 08:51:49 - ParallelOrchestrator - INFO - Chunk 58: calculating flow Frame 232 -> 236
+scatter_total=0 B
+2026-05-18 08:51:50 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 49, Iter Time: 0.7705s, FPS: 5.1912
+2026-05-18 08:51:50 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 49, Iter Time: 0.7705s, FPS: 5.1913
+2026-05-18 08:51:50 - ParallelOrchestrator - INFO - Consumer: Got data block 53.
+2026-05-18 08:51:50 - ParallelOrchestrator - INFO - Producer: Real data chunk 58/63 placed in queue. 
+2026-05-18 08:51:50 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:50 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 33.4771s
+2026-05-18 08:51:50 - ParallelOrchestrator - INFO - Chunk 59: calculating flow Frame 236 -> 240
+scatter_total=0 B
+2026-05-18 08:51:51 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 50, Iter Time: 0.7649s, FPS: 5.2292
+2026-05-18 08:51:51 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 50, Iter Time: 0.7649s, FPS: 5.2292
+2026-05-18 08:51:51 - ParallelOrchestrator - INFO - Producer: Real data chunk 59/63 placed in queue. 
+2026-05-18 08:51:51 - ParallelOrchestrator - INFO - Consumer: Got data block 54.
+2026-05-18 08:51:51 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:51 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 34.1089s
+2026-05-18 08:51:51 - ParallelOrchestrator - INFO - Chunk 60: calculating flow Frame 240 -> 244
+scatter_total=0 B
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 51, Iter Time: 0.7652s, FPS: 5.2274
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 51, Iter Time: 0.7652s, FPS: 5.2272
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Consumer: Got data block 55.
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Producer: Real data chunk 60/63 placed in queue. 
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:52 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 34.7405s
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Chunk 61: calculating flow Frame 244 -> 248
+scatter_total=0 B
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 52, Iter Time: 0.7650s, FPS: 5.2291
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 52, Iter Time: 0.7649s, FPS: 5.2292
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Producer: Real data chunk 61/63 placed in queue. 
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Consumer: Got data block 56.
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:52 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 35.3723s
+2026-05-18 08:51:52 - ParallelOrchestrator - INFO - Chunk 62: calculating flow Frame 248 -> 252
+scatter_total=0 B
+2026-05-18 08:51:53 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 53, Iter Time: 0.7657s, FPS: 5.2240
+2026-05-18 08:51:53 - ParallelOrchestrator - INFO - Consumer: Got data block 57.
+2026-05-18 08:51:53 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 53, Iter Time: 0.7659s, FPS: 5.2223
+2026-05-18 08:51:53 - ParallelOrchestrator - INFO - Producer: Real data chunk 62/63 placed in queue. 
+2026-05-18 08:51:53 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:53 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 36.0049s
+scatter_total=0 B
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 54, Iter Time: 0.5910s, FPS: 6.7682
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 54, Iter Time: 0.5908s, FPS: 6.7710
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Consumer: Got data block 58.
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Producer: Real data chunk 63/63 placed in queue. 
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:51:54 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 36.4621s
+scatter_total=0 B
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 55, Iter Time: 0.5918s, FPS: 6.7593
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 55, Iter Time: 0.5918s, FPS: 6.7591
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Consumer: Got data block 59.
+2026-05-18 08:51:54 - ParallelOrchestrator - INFO - Producer: Flush chunk 1/3 placed in queue.
+2026-05-18 08:51:54 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 36.9204s
+scatter_total=0 B
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 56, Iter Time: 0.5932s, FPS: 6.7434
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 56, Iter Time: 0.5932s, FPS: 6.7436
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Producer: Flush chunk 2/3 placed in queue.
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Consumer: Got data block 60.
+2026-05-18 08:51:55 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 37.3806s
+scatter_total=0 B
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 57, Iter Time: 0.5938s, FPS: 6.7363
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Consumer: Got data block 61.
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 57, Iter Time: 0.5940s, FPS: 6.7336
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Producer: Flush chunk 3/3 placed in queue.
+2026-05-18 08:51:55 - ParallelOrchestrator - INFO - Producer thread finished. All data blocks produced.
+scatter_total=0 B
+2026-05-18 08:51:56 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 58, Iter Time: 0.5924s, FPS: 6.7523
+2026-05-18 08:51:56 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 58, Iter Time: 0.5923s, FPS: 6.7538
+2026-05-18 08:51:56 - ParallelOrchestrator - INFO - Consumer: Got data block 62.
+scatter_total=0 B
+2026-05-18 08:51:57 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 59, Iter Time: 0.5909s, FPS: 6.7696
+2026-05-18 08:51:57 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 59, Iter Time: 0.5909s, FPS: 6.7695
+2026-05-18 08:51:57 - ParallelOrchestrator - INFO - Consumer: Got data block 63.
+scatter_total=0 B
+2026-05-18 08:51:57 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 60, Iter Time: 0.5941s, FPS: 6.7332
+2026-05-18 08:51:57 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 60, Iter Time: 0.5941s, FPS: 6.7334
+2026-05-18 08:51:57 - ParallelOrchestrator - INFO - Consumer: Got data block 64.
+scatter_total=0 B
+2026-05-18 08:51:58 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 61, Iter Time: 0.5941s, FPS: 6.7331
+2026-05-18 08:51:58 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 61, Iter Time: 0.5941s, FPS: 6.7329
+2026-05-18 08:51:58 - ParallelOrchestrator - INFO - Consumer: Got data block 65.
+scatter_total=0 B
+2026-05-18 08:51:58 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 62, Iter Time: 0.5937s, FPS: 6.7376
+2026-05-18 08:51:58 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 62, Iter Time: 0.5937s, FPS: 6.7379
+2026-05-18 08:51:58 - ParallelOrchestrator - INFO - Consumer: Got data block 66.
+scatter_total=0 B
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 63, Iter Time: 0.5925s, FPS: 6.7505
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 63, Iter Time: 0.5926s, FPS: 6.7502
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - Saver thread received termination signal.
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - Average End-to-End FPS (Saver-side, after pipeline fill): 5.2649
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - Saver thread finished.
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - ==================================================
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - Performance Summary
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - ==================================================
+Video shape before trimming: (257, 480, 832, 3)
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - Average End-to-End FPS (Consumer-side, after pipeline fill): 5.4280
+2026-05-18 08:51:59 - ParallelOrchestrator - INFO - Final video shape: (254, 480, 832, 3)
+It is recommended to use `export_to_video` with `imageio` and `imageio-ffmpeg` as a backend. 
+These libraries are not present in your environment. Attempting to use legacy OpenCV backend to export video. 
+Support for the OpenCV backend will be deprecated in a future Diffusers version
+2026-05-18 08:52:00 - ParallelOrchestrator - INFO - Video saved to: outputs/sdv2_full/output_quantile_vae_0.1_dit_0.1_steps_4.mp4
+2026-05-18 08:52:00 - ParallelOrchestrator - INFO - Parallel inference with timing completed.
+Peak GPU memory: 18.59 GB

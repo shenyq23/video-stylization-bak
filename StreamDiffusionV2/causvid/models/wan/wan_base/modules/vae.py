@@ -30,14 +30,18 @@ from deps.sige3d import SIGECausalConv3d, Gather3d, Scatter3d, \
     ScatterWithBlockResidual3d, ScatterGather3d, SIGEModel3d, SIGEModule3d, \
     SIGEConv2d, Gather2d, Scatter2d
 
+from causvid.profile_utils import (
+    set_active_timings, clear_active_timings, time_block,
+)
+
 from utils.vae_utils.mem_stats import collect_scatter_cache_modules, feat_map_nbytes, format_bytes, scatter_cache_nbytes
 from utils.vae_utils.op_time_stats import install_sige_op_time_stats, print_sige_op_time_stats
 from utils.vae_utils.mask_utils import build_gather_block_masks, dilate_mask, downsample_mask
 from utils.optical_wrapper import GMFlowWrapper, X265MVWrapper, OcclusionComputation  # noqa: E402
 
 
-from debugUtil import enable_custom_repr
-enable_custom_repr()
+# from debugUtil import enable_custom_repr
+# enable_custom_repr()
 
 # install_sige_op_time_stats()
 
@@ -727,69 +731,60 @@ class Encoder3d(SIGEModel3d):
             CausalConv3d(out_dim, z_dim, 3, padding=1))
 
     def forward(self, x, feat_cache=None, feat_idx=[0], is_first_frame=False):
-        # 针对conv1的, 不进行稀疏计算
-        if feat_cache is not None:
-            idx = feat_idx[0]
-            cache_x = x[:, :, -CACHE_T:, :, :].clone()
-            if cache_x.shape[2] < CACHE_T and feat_cache[idx] is not None:
-                # cache last frame of last two chunk
-                cache_x = torch.cat([
-                    feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(
-                        cache_x.device), cache_x
-                ],
-                    dim=2)
-            x = self.conv1(x, feat_cache[idx])
-            feat_cache[idx] = cache_x
-            feat_idx[0] += 1
-        else:
-            x = self.conv1(x)
+        # Track current spatial height so we can bucket sub-modules by
+        # resolution stage. The naming uses Enc/<H> so encoder and decoder
+        # buckets stay disjoint in the timings dict.
+        cur_h = int(x.shape[-2])
 
-        # downsamples
-        for layer in self.downsamples:
+        with time_block(f"VAE/Enc/{cur_h}"):
+            # 针对conv1的, 不进行稀疏计算
             if feat_cache is not None:
-                # if isinstance(layer, Resample):
-                    # print("Resample forward")
-                x = layer(x, feat_cache, feat_idx, is_first_frame)
-            else:
-                x = layer(x)
-
-        # print("*" * 40)
-        # print("Enter middle blocks")
-        # middle
-        for layer in self.middle:
-            if isinstance(layer, ResidualBlock) and feat_cache is not None:
-                x = layer(x, feat_cache, feat_idx, is_first_frame)
-            else:
-                # transformers
-                # torch.cuda.synchronize()
-                # start = torch.cuda.Event(enable_timing=True)
-                # end   = torch.cuda.Event(enable_timing=True)
-                # start.record()
-
-                x = layer(x)
-
-                # end.record()
-                # torch.cuda.synchronize()
-                # print(f"encoder transformers: {start.elapsed_time(end):.2f} ms")   # ms
-
-        # head
-        # 针对head中的conv, 不进行稀疏计算
-        for layer in self.head:
-            if isinstance(layer, CausalConv3d) and feat_cache is not None:
                 idx = feat_idx[0]
                 cache_x = x[:, :, -CACHE_T:, :, :].clone()
                 if cache_x.shape[2] < CACHE_T and feat_cache[idx] is not None:
-                    # cache last frame of last two chunk
                     cache_x = torch.cat([
                         feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(
                             cache_x.device), cache_x
-                    ],
-                        dim=2)
-                x = layer(x, feat_cache[idx])
+                    ], dim=2)
+                x = self.conv1(x, feat_cache[idx])
                 feat_cache[idx] = cache_x
                 feat_idx[0] += 1
             else:
-                x = layer(x)
+                x = self.conv1(x)
+
+        # downsamples: walk the Sequential and tag each call by current_h.
+        # A Resample layer halves the height after its forward, so we re-read
+        # x.shape[-2] AFTER the call to update the bucket label.
+        for layer in self.downsamples:
+            with time_block(f"VAE/Enc/{cur_h}"):
+                if feat_cache is not None:
+                    x = layer(x, feat_cache, feat_idx, is_first_frame)
+                else:
+                    x = layer(x)
+            cur_h = int(x.shape[-2])
+
+        # middle + head run at the smallest (current) resolution.
+        with time_block(f"VAE/Enc/{cur_h}"):
+            for layer in self.middle:
+                if isinstance(layer, ResidualBlock) and feat_cache is not None:
+                    x = layer(x, feat_cache, feat_idx, is_first_frame)
+                else:
+                    x = layer(x)
+
+            for layer in self.head:
+                if isinstance(layer, CausalConv3d) and feat_cache is not None:
+                    idx = feat_idx[0]
+                    cache_x = x[:, :, -CACHE_T:, :, :].clone()
+                    if cache_x.shape[2] < CACHE_T and feat_cache[idx] is not None:
+                        cache_x = torch.cat([
+                            feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(
+                                cache_x.device), cache_x
+                        ], dim=2)
+                    x = layer(x, feat_cache[idx])
+                    feat_cache[idx] = cache_x
+                    feat_idx[0] += 1
+                else:
+                    x = layer(x)
         return x
 
 
@@ -876,64 +871,57 @@ class Decoder3d(SIGEModel3d):
             CausalConv3d(out_dim, 3, 3, padding=1))
 
     def forward(self, x, feat_cache=None, feat_idx=[0], is_first_frame=False):
-        # conv1
-        if feat_cache is not None:
-            idx = feat_idx[0]
-            cache_x = x[:, :, -CACHE_T:, :, :].clone()
-            if cache_x.shape[2] < CACHE_T and feat_cache[idx] is not None:
-                # cache last frame of last two chunk
-                cache_x = torch.cat([
-                    feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(
-                        cache_x.device), cache_x
-                ],
-                    dim=2)
-            x = self.conv1(x, feat_cache[idx])
-            feat_cache[idx] = cache_x
-            feat_idx[0] += 1
-        else:
-            x = self.conv1(x)
+        # Decoder mirrors encoder: starts at smallest H, doubles after each
+        # Resample, ends at full H. Use Dec/<H> labels so encoder and decoder
+        # buckets stay disjoint.
+        cur_h = int(x.shape[-2])
 
-        # middle
-        for layer in self.middle:
-            if isinstance(layer, ResidualBlock) and feat_cache is not None:
-                x = layer(x, feat_cache, feat_idx, is_first_frame)
-            else:
-                # transformers
-                # torch.cuda.synchronize()
-                # start = torch.cuda.Event(enable_timing=True)
-                # end   = torch.cuda.Event(enable_timing=True)
-                # start.record()
-
-                x = layer(x)
-
-                # end.record()
-                # torch.cuda.synchronize()
-                # print(f"decoder transformers: {start.elapsed_time(end):.2f} ms")   # ms
-
-        # upsamples
-        for layer in self.upsamples:
+        with time_block(f"VAE/Dec/{cur_h}"):
             if feat_cache is not None:
-                x = layer(x, feat_cache, feat_idx, is_first_frame)
-            else:
-                x = layer(x)
-
-        # head
-        for layer in self.head:
-            if isinstance(layer, CausalConv3d) and feat_cache is not None:
                 idx = feat_idx[0]
                 cache_x = x[:, :, -CACHE_T:, :, :].clone()
                 if cache_x.shape[2] < CACHE_T and feat_cache[idx] is not None:
-                    # cache last frame of last two chunk
                     cache_x = torch.cat([
                         feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(
                             cache_x.device), cache_x
-                    ],
-                        dim=2)
-                x = layer(x, feat_cache[idx])
+                    ], dim=2)
+                x = self.conv1(x, feat_cache[idx])
                 feat_cache[idx] = cache_x
                 feat_idx[0] += 1
             else:
-                x = layer(x)
+                x = self.conv1(x)
+
+            for layer in self.middle:
+                if isinstance(layer, ResidualBlock) and feat_cache is not None:
+                    x = layer(x, feat_cache, feat_idx, is_first_frame)
+                else:
+                    x = layer(x)
+
+        # upsamples — a Resample doubles H, so re-read shape after each call.
+        for layer in self.upsamples:
+            with time_block(f"VAE/Dec/{cur_h}"):
+                if feat_cache is not None:
+                    x = layer(x, feat_cache, feat_idx, is_first_frame)
+                else:
+                    x = layer(x)
+            cur_h = int(x.shape[-2])
+
+        # head runs at the full output resolution.
+        with time_block(f"VAE/Dec/{cur_h}"):
+            for layer in self.head:
+                if isinstance(layer, CausalConv3d) and feat_cache is not None:
+                    idx = feat_idx[0]
+                    cache_x = x[:, :, -CACHE_T:, :, :].clone()
+                    if cache_x.shape[2] < CACHE_T and feat_cache[idx] is not None:
+                        cache_x = torch.cat([
+                            feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(
+                                cache_x.device), cache_x
+                        ], dim=2)
+                    x = layer(x, feat_cache[idx])
+                    feat_cache[idx] = cache_x
+                    feat_idx[0] += 1
+                else:
+                    x = layer(x)
         return x
 
 
@@ -962,6 +950,9 @@ class WanVAE_(nn.Module):
                  residual_shortcut_block_size=2,
                  full_refresh_every=0):
         super().__init__()
+        # Per-submodule profiling: when set to a dict by gpu.py, `time_block`
+        # calls inside stream_encode/stream_decode accumulate into it.
+        self.profile_timings = None
         self.dim = dim
         self.z_dim = z_dim
         self.dim_mult = dim_mult
@@ -994,6 +985,13 @@ class WanVAE_(nn.Module):
         self.decoder_sparse_max_res = None
     
     def stream_encode(self, x, scale, mask=None, flow=None, is_nocache=False):
+        set_active_timings(self.profile_timings)
+        try:
+            return self._stream_encode_impl(x, scale, mask, flow, is_nocache)
+        finally:
+            clear_active_timings()
+
+    def _stream_encode_impl(self, x, scale, mask=None, flow=None, is_nocache=False):
         # self.clear_cache()
         # cache
         t = x.shape[2]
@@ -1053,14 +1051,9 @@ class WanVAE_(nn.Module):
                     print("*" * 40)
                     print("Run in sparse mode!!!")
                     print("*" * 40)
-                    self.encoder.set_masks(mask)
-                    # t = cuda_time_s(self.encoder.set_masks, mask)
-                    # print(f"[TIMING] encoder.set_masks = {t:.2f} ms")
-
-                    self.encoder.flow_cache(flow)
-                    # t = cuda_time_s(self.encoder.flow_cache, flow)
-                    # print(f"[TIMING] encoder.flow_cache = {t:.2f} ms")
-                    # flow_time_enc.append(t)
+                    with time_block("VAE/Cache Warp"):
+                        self.encoder.set_masks(mask)
+                        self.encoder.flow_cache(flow)
 
                 out = []
                 for i in range(t//4):   # 实际就运行一次，因为t=4
@@ -1083,8 +1076,15 @@ class WanVAE_(nn.Module):
         return mu
 
     def stream_decode(self, z, scale, mask=None, flow=None):
+        set_active_timings(self.profile_timings)
+        try:
+            return self._stream_decode_impl(z, scale, mask, flow)
+        finally:
+            clear_active_timings()
+
+    def _stream_decode_impl(self, z, scale, mask=None, flow=None):
         assert mask is None and flow is None, "Currently mask and flow are not supported in decoder."
-        
+
         # z: [b,c,t,h,w]
         t = z.shape[2]
         if isinstance(scale[0], torch.Tensor):

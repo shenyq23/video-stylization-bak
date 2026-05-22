@@ -12,7 +12,53 @@ GATHER_BLOCK_OCC_KEY = "__gather_block_occ__"
 GATHER_BLOCK_TOPK_KEY = "__gather_block_topk__"
 
 
-def build_gather_block_masks(raw_occ_map: torch.Tensor, top_k_percentage: float) -> Dict:
+def compute_cdf_ratio(
+    occ_map: torch.Tensor,
+    coverage_rho: float = 0.7,
+    r_min: float = 0.08,
+    r_max: float = 0.30,
+) -> float:
+    """MotionFlow paper §3.4 CDF-based adaptive sparsity ratio.
+
+    Sort tokens by motion magnitude descending, find the smallest k such that
+    the cumulative motion covers `coverage_rho` of total. Return k / N clamped
+    to [r_min, r_max].
+    """
+    flat = occ_map.detach().float().abs().flatten()
+    n = flat.numel()
+    if n == 0:
+        return r_max
+    total = flat.sum()
+    if not torch.isfinite(total) or total.item() <= 0.0:
+        return r_max
+    sorted_vals, _ = torch.sort(flat, descending=True)
+    cumsum = torch.cumsum(sorted_vals, dim=0)
+    threshold = float(coverage_rho) * float(total.item())
+    # smallest k such that cumsum[k-1] >= threshold; searchsorted returns first
+    # index where cumsum >= threshold; add 1 to convert from index to count.
+    idx = int(torch.searchsorted(cumsum, torch.tensor(threshold, device=cumsum.device)).item())
+    k = min(max(idx + 1, 1), n)
+    ratio = k / float(n)
+    return float(max(r_min, min(r_max, ratio)))
+
+
+def build_gather_block_masks(
+    raw_occ_map: torch.Tensor,
+    top_k_percentage: float,
+    *,
+    adaptive: bool = False,
+    cdf_coverage: float = 0.7,
+    r_min: float = 0.08,
+    r_max: float = 0.30,
+) -> Dict:
+    if adaptive:
+        # Squeeze any leading 1-dims to get a 2D HxW map for CDF computation.
+        occ_for_cdf = raw_occ_map
+        while occ_for_cdf.dim() > 2 and occ_for_cdf.size(0) == 1:
+            occ_for_cdf = occ_for_cdf.squeeze(0)
+        top_k_percentage = compute_cdf_ratio(
+            occ_for_cdf, coverage_rho=cdf_coverage, r_min=r_min, r_max=r_max
+        )
     return {
         GATHER_BLOCK_OCC_KEY: raw_occ_map,
         GATHER_BLOCK_TOPK_KEY: float(top_k_percentage),

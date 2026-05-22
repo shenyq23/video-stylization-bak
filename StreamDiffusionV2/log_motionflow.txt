@@ -1,0 +1,2367 @@
+2026-05-18 08:52:39 - root - INFO - Input video tensor shape: torch.Size([1, 3, 254, 480, 832])
+2026-05-18 08:52:39 - root - INFO - Preparing for optical flow calculation with model: x265
+2026-05-18 08:52:39 - OpticalFlowCalculator - INFO - Using occlusion mask generation method: 'gather_block'
+2026-05-18 08:52:39 - OpticalFlowCalculator - INFO - Initializing optical flow model: x265
+2026-05-18 08:52:39 - OpticalFlowCalculator - INFO - Using 'luminosity' occlusion for x265.
+2026-05-18 08:52:39,923 - SingleGPUInference - INFO - Initializing CausalStreamInferencePipeline...
+Cannot initialize model with low cpu memory usage because `accelerate` was not found in the environment. Defaulting to `low_cpu_mem_usage=False`. It is strongly recommended to install `accelerate` for faster and less memory-intense model loading. You can do so with: 
+```
+pip install accelerate
+```
+.
+Skipping Text Encoder initialization, will use cached embedding.
+/workspace/video-breakdown/StreamDiffusionV2/../deps/sige3d/gather2d.py:39: UserWarning: Change the block size from (4, 4) to (3, 3)
+  warnings.warn("Change the block size from (%d, %d) to (%d, %d)" % (*block_size, b0, b1))
+2026-05-18 08:52:52 - root - INFO - loading /workspace/video-breakdown/StreamDiffusionV2/wan_models/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth
+****************************************
+Load Model Weight Successfully!!!
+****************************************
+KV inference with 1 frames per block
+2026-05-18 08:52:53,272 - SingleGPUInference - INFO - Single GPU inference pipeline manager initialized
+2026-05-18 08:52:53,272 - SingleGPUInference - INFO - Using WanVAE encoder + WanVAE decoder.
+2026-05-18 08:52:53,272 - SingleGPUInference - INFO - Loading checkpoint from ckpts/wan_causal_dmd_v2v/model.pt
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Consumer started. Replicating original inference logic with detailed timing.
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Producer thread started.
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Saver thread started.
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Consumer: Waiting for initial data block...
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Real-time simulation enabled: Target Producer FPS=30, Chunk Size=4, Target Interval=0.1333s
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Producer: Initial 5-frame data block placed in queue.0.47388434410095215
+2026-05-18 08:52:56 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.3409s
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Consumer: Got initial data block. 
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Chunk 1: calculating flow Frame 4 -> 8
+Attempting to load cached text embedding from './text_cache/cached_text_embedding_A highly detailed fu.pt'...
+Successfully loaded and prepared cached text embedding.
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+/usr/local/lib/python3.10/dist-packages/torch/functional.py:539: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at /pytorch/aten/src/ATen/native/TensorShape.cpp:3637.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+****************************************
+Run in sparse mode!!!
+****************************************
+/usr/local/lib/python3.10/dist-packages/torch/utils/cpp_extension.py:2059: UserWarning: TORCH_CUDA_ARCH_LIST is not set, all archs for visible cards are included for compilation. 
+If this is not desired, please set os.environ['TORCH_CUDA_ARCH_LIST'].
+  warnings.warn(
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Producer: Real data chunk 1/63 placed in queue. 
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Queue len: 1
+2026-05-18 08:52:56 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.6165s
+2026-05-18 08:52:56 - ParallelOrchestrator - INFO - Chunk 2: calculating flow Frame 8 -> 12
+x265 [info]: frame I:      1, Avg QP:24.64  kb/s: 4247.52 
+x265 [info]: frame P:      1, Avg QP:28.15  kb/s: 1537.68 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.36s (5.59 fps), 2892.60 kb/s, Avg QP:26.40
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Producer: Real data chunk 2/63 placed in queue. 
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Queue len: 2
+2026-05-18 08:52:57 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 0.7971s
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Chunk 3: calculating flow Frame 12 -> 16
+x265 [info]: frame I:      1, Avg QP:24.63  kb/s: 4372.80 
+x265 [info]: frame P:      1, Avg QP:28.46  kb/s: 783.12  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.25s (7.91 fps), 2577.96 kb/s, Avg QP:26.54
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Consumer: Initial block processed and enqueued for saving.
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 0, Iter Time: 1.7421s, FPS: 2.2961
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Consumer: Got data block 1.
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Producer: Real data chunk 3/63 placed in queue. 
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Queue len: 2
+2026-05-18 08:52:57 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 1.2389s
+2026-05-18 08:52:57 - ParallelOrchestrator - INFO - Chunk 4: calculating flow Frame 16 -> 20
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4309.44 
+x265 [info]: frame P:      1, Avg QP:27.81  kb/s: 835.20  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.55s (3.64 fps), 2572.32 kb/s, Avg QP:26.21
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Producer: Real data chunk 4/63 placed in queue. 
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Queue len: 3
+2026-05-18 08:52:58 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 1.4266s
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Chunk 5: calculating flow Frame 20 -> 24
+x265 [info]: frame I:      1, Avg QP:24.63  kb/s: 4280.16 
+x265 [info]: frame P:      1, Avg QP:27.81  kb/s: 1578.24 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.29s (6.84 fps), 2929.20 kb/s, Avg QP:26.22
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+scatter_total=4.01 GB
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Consumer: Got data block 2.
+****************************************
+Run in sparse mode!!!
+****************************************
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Producer: Real data chunk 5/63 placed in queue. 
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Queue len: 3
+2026-05-18 08:52:58 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 1.6177s
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Chunk 6: calculating flow Frame 24 -> 28
+x265 [info]: frame I:      1, Avg QP:24.62  kb/s: 4017.36 
+x265 [info]: frame P:      1, Avg QP:27.85  kb/s: 1661.04 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.30s (6.71 fps), 2839.20 kb/s, Avg QP:26.24
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Consumer: Got data block 3.
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Producer: Real data chunk 6/63 placed in queue. 
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Queue len: 3
+2026-05-18 08:52:58 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 1.7704s
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Chunk 7: calculating flow Frame 28 -> 32
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4214.64 
+x265 [info]: frame P:      1, Avg QP:28.16  kb/s: 1612.32 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.26s (7.71 fps), 2913.48 kb/s, Avg QP:26.39
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:52:58 - ParallelOrchestrator - INFO - Consumer: Got data block 4.
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Producer: Real data chunk 7/63 placed in queue. 
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Queue len: 3
+2026-05-18 08:52:59 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 1.9065s
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Chunk 8: calculating flow Frame 32 -> 36
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4258.32 
+x265 [info]: frame P:      1, Avg QP:27.85  kb/s: 1282.80 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.24s (8.21 fps), 2770.56 kb/s, Avg QP:26.23
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 1, Iter Time: 1.7174s, FPS: 2.3291
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 1, Iter Time: 1.7176s, FPS: 2.3288
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Consumer: Got data block 5.
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Producer: Real data chunk 8/63 placed in queue. 
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Queue len: 3
+2026-05-18 08:52:59 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 2.2612s
+2026-05-18 08:52:59 - ParallelOrchestrator - INFO - Chunk 9: calculating flow Frame 36 -> 40
+x265 [info]: frame I:      1, Avg QP:24.59  kb/s: 4264.32 
+x265 [info]: frame P:      1, Avg QP:27.80  kb/s: 939.36  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.46s (4.32 fps), 2601.84 kb/s, Avg QP:26.19
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 2, Iter Time: 0.5622s, FPS: 7.1146
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 2, Iter Time: 0.5623s, FPS: 7.1138
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Producer: Real data chunk 9/63 placed in queue. 
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Consumer: Got data block 6.
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Queue len: 3
+2026-05-18 08:53:00 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 2.6895s
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Chunk 10: calculating flow Frame 40 -> 44
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4297.20 
+x265 [info]: frame P:      1, Avg QP:28.07  kb/s: 1220.88 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.55s (3.64 fps), 2759.04 kb/s, Avg QP:26.34
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 3, Iter Time: 0.5168s, FPS: 7.7401
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 3, Iter Time: 0.5168s, FPS: 7.7405
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Consumer: Got data block 7.
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Producer: Real data chunk 10/63 placed in queue. 
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Queue len: 3
+2026-05-18 08:53:00 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 3.1205s
+2026-05-18 08:53:00 - ParallelOrchestrator - INFO - Chunk 11: calculating flow Frame 44 -> 48
+x265 [info]: frame I:      1, Avg QP:24.60  kb/s: 4384.32 
+x265 [info]: frame P:      1, Avg QP:27.86  kb/s: 1157.28 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.95 fps), 2770.80 kb/s, Avg QP:26.23
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Producer: Real data chunk 11/63 placed in queue. 
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Queue len: 4
+2026-05-18 08:53:01 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 3.3384s
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Chunk 12: calculating flow Frame 48 -> 52
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4352.88 
+x265 [info]: frame P:      1, Avg QP:28.08  kb/s: 1691.28 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.30s (6.74 fps), 3022.08 kb/s, Avg QP:26.34
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+scatter_total=4.01 GB
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 4, Iter Time: 0.7186s, FPS: 5.5661
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 4, Iter Time: 0.7185s, FPS: 5.5672
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Consumer: Got data block 8.
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Producer: Real data chunk 12/63 placed in queue. 
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Queue len: 4
+2026-05-18 08:53:01 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 3.6292s
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Chunk 13: calculating flow Frame 52 -> 56
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4274.16 
+x265 [info]: frame P:      1, Avg QP:28.17  kb/s: 1143.36 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.37s (5.42 fps), 2708.76 kb/s, Avg QP:26.39
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 5, Iter Time: 0.5993s, FPS: 6.6742
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 5, Iter Time: 0.5993s, FPS: 6.6747
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Consumer: Got data block 9.
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Producer: Real data chunk 13/63 placed in queue. 
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Queue len: 4
+2026-05-18 08:53:01 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 4.0254s
+2026-05-18 08:53:01 - ParallelOrchestrator - INFO - Chunk 14: calculating flow Frame 56 -> 60
+x265 [info]: frame I:      1, Avg QP:24.62  kb/s: 4296.48 
+x265 [info]: frame P:      1, Avg QP:28.15  kb/s: 761.04  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.50s (3.97 fps), 2528.76 kb/s, Avg QP:26.39
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:02 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 6, Iter Time: 0.5668s, FPS: 7.0570
+2026-05-18 08:53:02 - ParallelOrchestrator - INFO - Producer: Real data chunk 14/63 placed in queue. 
+2026-05-18 08:53:02 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 6, Iter Time: 0.5671s, FPS: 7.0530
+2026-05-18 08:53:02 - ParallelOrchestrator - INFO - Consumer: Got data block 10.
+2026-05-18 08:53:02 - ParallelOrchestrator - INFO - Queue len: 4
+2026-05-18 08:53:02 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 4.4244s
+2026-05-18 08:53:02 - ParallelOrchestrator - INFO - Chunk 15: calculating flow Frame 60 -> 64
+x265 [info]: frame I:      1, Avg QP:24.62  kb/s: 4395.84 
+x265 [info]: frame P:      1, Avg QP:28.16  kb/s: 652.56  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.86 fps), 2524.20 kb/s, Avg QP:26.39
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 7, Iter Time: 0.5287s, FPS: 7.5659
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 7, Iter Time: 0.5285s, FPS: 7.5690
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Consumer: Got data block 11.
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Producer: Real data chunk 15/63 placed in queue. 
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Queue len: 4
+2026-05-18 08:53:03 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 4.8479s
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Chunk 16: calculating flow Frame 64 -> 68
+x265 [info]: frame I:      1, Avg QP:24.67  kb/s: 4411.20 
+x265 [info]: frame P:      1, Avg QP:27.91  kb/s: 1432.80 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.91 fps), 2922.00 kb/s, Avg QP:26.29
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 8, Iter Time: 0.5668s, FPS: 7.0576
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Producer: Real data chunk 16/63 placed in queue. 
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Consumer: Got data block 12.
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 8, Iter Time: 0.5672s, FPS: 7.0527
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Queue len: 4
+2026-05-18 08:53:03 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 5.2531s
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Chunk 17: calculating flow Frame 68 -> 72
+x265 [info]: frame I:      1, Avg QP:24.66  kb/s: 4401.36 
+x265 [info]: frame P:      1, Avg QP:28.10  kb/s: 1610.16 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.93 fps), 3005.76 kb/s, Avg QP:26.38
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Producer: Real data chunk 17/63 placed in queue. 
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:03 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 5.4794s
+2026-05-18 08:53:03 - ParallelOrchestrator - INFO - Chunk 18: calculating flow Frame 72 -> 76
+x265 [info]: frame I:      1, Avg QP:24.68  kb/s: 4331.76 
+x265 [info]: frame P:      1, Avg QP:27.97  kb/s: 1692.48 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.30s (6.60 fps), 3012.12 kb/s, Avg QP:26.32
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+scatter_total=4.01 GB
+****************************************
+Run in sparse mode!!!
+****************************************
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 9, Iter Time: 0.7065s, FPS: 5.6613
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Consumer: Got data block 13.
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 9, Iter Time: 0.7064s, FPS: 5.6625
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Producer: Real data chunk 18/63 placed in queue. 
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:04 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 5.7801s
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Chunk 19: calculating flow Frame 76 -> 80
+x265 [info]: frame I:      1, Avg QP:24.67  kb/s: 4538.40 
+x265 [info]: frame P:      1, Avg QP:28.48  kb/s: 714.00  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.41s (4.87 fps), 2626.20 kb/s, Avg QP:26.58
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 10, Iter Time: 0.6137s, FPS: 6.5179
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 10, Iter Time: 0.6135s, FPS: 6.5204
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Producer: Real data chunk 19/63 placed in queue. 
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Consumer: Got data block 14.
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:04 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 6.1734s
+2026-05-18 08:53:04 - ParallelOrchestrator - INFO - Chunk 20: calculating flow Frame 80 -> 84
+x265 [info]: frame I:      1, Avg QP:24.68  kb/s: 4573.20 
+x265 [info]: frame P:      1, Avg QP:28.31  kb/s: 436.32  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.89 fps), 2504.76 kb/s, Avg QP:26.49
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:05 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 11, Iter Time: 0.5505s, FPS: 7.2657
+2026-05-18 08:53:05 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 11, Iter Time: 0.5504s, FPS: 7.2670
+2026-05-18 08:53:05 - ParallelOrchestrator - INFO - Producer: Real data chunk 20/63 placed in queue. 
+2026-05-18 08:53:05 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:05 - ParallelOrchestrator - INFO - Consumer: Got data block 15.
+2026-05-18 08:53:05 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 6.5900s
+2026-05-18 08:53:05 - ParallelOrchestrator - INFO - Chunk 21: calculating flow Frame 84 -> 88
+x265 [info]: frame I:      1, Avg QP:24.71  kb/s: 4483.68 
+x265 [info]: frame P:      1, Avg QP:28.20  kb/s: 1561.44 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.50s (4.00 fps), 3022.56 kb/s, Avg QP:26.45
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 12, Iter Time: 0.5497s, FPS: 7.2768
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 12, Iter Time: 0.5497s, FPS: 7.2766
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Producer: Real data chunk 21/63 placed in queue. 
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Consumer: Got data block 16.
+2026-05-18 08:53:06 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 7.0062s
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Chunk 22: calculating flow Frame 88 -> 92
+x265 [info]: frame I:      1, Avg QP:24.68  kb/s: 4538.88 
+x265 [info]: frame P:      1, Avg QP:28.01  kb/s: 865.20  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.49s (4.07 fps), 2702.04 kb/s, Avg QP:26.35
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 13, Iter Time: 0.5460s, FPS: 7.3255
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Consumer: Got data block 17.
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 13, Iter Time: 0.5463s, FPS: 7.3217
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Producer: Real data chunk 22/63 placed in queue. 
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:06 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 7.4195s
+2026-05-18 08:53:06 - ParallelOrchestrator - INFO - Chunk 23: calculating flow Frame 92 -> 96
+x265 [info]: frame I:      1, Avg QP:24.67  kb/s: 4532.16 
+x265 [info]: frame P:      1, Avg QP:27.48  kb/s: 408.48  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.53s (3.76 fps), 2470.32 kb/s, Avg QP:26.08
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 14, Iter Time: 0.6867s, FPS: 5.8250
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 14, Iter Time: 0.6865s, FPS: 5.8265
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Consumer: Got data block 18.
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Producer: Real data chunk 23/63 placed in queue. 
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:07 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 7.9729s
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Chunk 24: calculating flow Frame 96 -> 100
+x265 [info]: frame I:      1, Avg QP:24.66  kb/s: 4434.00 
+x265 [info]: frame P:      1, Avg QP:27.37  kb/s: 501.12  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.65s (3.07 fps), 2467.56 kb/s, Avg QP:26.01
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 15, Iter Time: 0.5472s, FPS: 7.3097
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 15, Iter Time: 0.5472s, FPS: 7.3098
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Producer: Real data chunk 24/63 placed in queue. 
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Consumer: Got data block 19.
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:07 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 8.3869s
+2026-05-18 08:53:07 - ParallelOrchestrator - INFO - Chunk 25: calculating flow Frame 100 -> 104
+x265 [info]: frame I:      1, Avg QP:24.63  kb/s: 4416.96 
+x265 [info]: frame P:      1, Avg QP:27.59  kb/s: 684.48  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.85 fps), 2550.72 kb/s, Avg QP:26.11
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 16, Iter Time: 0.5508s, FPS: 7.2628
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Consumer: Got data block 20.
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 16, Iter Time: 0.5509s, FPS: 7.2604
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Producer: Real data chunk 25/63 placed in queue. 
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:08 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 8.8039s
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Chunk 26: calculating flow Frame 104 -> 108
+x265 [info]: frame I:      1, Avg QP:24.62  kb/s: 4418.88 
+x265 [info]: frame P:      1, Avg QP:27.84  kb/s: 833.52  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.91 fps), 2626.20 kb/s, Avg QP:26.23
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 17, Iter Time: 0.5511s, FPS: 7.2577
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 17, Iter Time: 0.5510s, FPS: 7.2598
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Consumer: Got data block 21.
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Producer: Real data chunk 26/63 placed in queue. 
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:08 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 9.2220s
+2026-05-18 08:53:08 - ParallelOrchestrator - INFO - Chunk 27: calculating flow Frame 108 -> 112
+x265 [info]: frame I:      1, Avg QP:24.57  kb/s: 4415.04 
+x265 [info]: frame P:      1, Avg QP:27.87  kb/s: 1141.92 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.54s (3.73 fps), 2778.48 kb/s, Avg QP:26.22
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:09 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 18, Iter Time: 0.5514s, FPS: 7.2548
+2026-05-18 08:53:09 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 18, Iter Time: 0.5513s, FPS: 7.2561
+2026-05-18 08:53:09 - ParallelOrchestrator - INFO - Producer: Real data chunk 27/63 placed in queue. 
+2026-05-18 08:53:09 - ParallelOrchestrator - INFO - Consumer: Got data block 22.
+2026-05-18 08:53:09 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:09 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 9.6489s
+2026-05-18 08:53:09 - ParallelOrchestrator - INFO - Chunk 28: calculating flow Frame 112 -> 116
+x265 [info]: frame I:      1, Avg QP:24.60  kb/s: 4408.08 
+x265 [info]: frame P:      1, Avg QP:27.66  kb/s: 1329.84 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.53s (3.74 fps), 2868.96 kb/s, Avg QP:26.13
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 19, Iter Time: 0.6928s, FPS: 5.7737
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 19, Iter Time: 0.6927s, FPS: 5.7743
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Consumer: Got data block 23.
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Producer: Real data chunk 28/63 placed in queue. 
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:10 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 10.1992s
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Chunk 29: calculating flow Frame 116 -> 120
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4407.60 
+x265 [info]: frame P:      1, Avg QP:27.23  kb/s: 1485.36 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.64s (3.13 fps), 2946.48 kb/s, Avg QP:25.92
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 20, Iter Time: 0.5517s, FPS: 7.2498
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 20, Iter Time: 0.5518s, FPS: 7.2494
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Producer: Real data chunk 29/63 placed in queue. 
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Consumer: Got data block 24.
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:10 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 10.6177s
+2026-05-18 08:53:10 - ParallelOrchestrator - INFO - Chunk 30: calculating flow Frame 120 -> 124
+x265 [info]: frame I:      1, Avg QP:24.64  kb/s: 4334.16 
+x265 [info]: frame P:      1, Avg QP:27.07  kb/s: 1914.96 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.84 fps), 3124.56 kb/s, Avg QP:25.85
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 21, Iter Time: 0.5524s, FPS: 7.2413
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 21, Iter Time: 0.5524s, FPS: 7.2415
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Producer: Real data chunk 30/63 placed in queue. 
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Consumer: Got data block 25.
+2026-05-18 08:53:11 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 11.0364s
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Chunk 31: calculating flow Frame 124 -> 128
+x265 [info]: frame I:      1, Avg QP:24.75  kb/s: 3638.16 
+x265 [info]: frame P:      1, Avg QP:27.08  kb/s: 2362.08 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.50s (4.02 fps), 3000.12 kb/s, Avg QP:25.92
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 22, Iter Time: 0.5519s, FPS: 7.2481
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 22, Iter Time: 0.5520s, FPS: 7.2468
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Producer: Real data chunk 31/63 placed in queue. 
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Consumer: Got data block 26.
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:11 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 11.4554s
+2026-05-18 08:53:11 - ParallelOrchestrator - INFO - Chunk 32: calculating flow Frame 128 -> 132
+x265 [info]: frame I:      1, Avg QP:24.52  kb/s: 2959.44 
+x265 [info]: frame P:      1, Avg QP:27.30  kb/s: 2113.44 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.95 fps), 2536.44 kb/s, Avg QP:25.91
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:12 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 23, Iter Time: 0.5514s, FPS: 7.2537
+2026-05-18 08:53:12 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 23, Iter Time: 0.5514s, FPS: 7.2536
+2026-05-18 08:53:12 - ParallelOrchestrator - INFO - Consumer: Got data block 27.
+2026-05-18 08:53:12 - ParallelOrchestrator - INFO - Producer: Real data chunk 32/63 placed in queue. 
+2026-05-18 08:53:12 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:12 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 11.8735s
+2026-05-18 08:53:12 - ParallelOrchestrator - INFO - Chunk 33: calculating flow Frame 132 -> 136
+x265 [info]: frame I:      1, Avg QP:24.53  kb/s: 3092.16 
+x265 [info]: frame P:      1, Avg QP:26.92  kb/s: 2438.64 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.92 fps), 2765.40 kb/s, Avg QP:25.72
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 24, Iter Time: 0.6885s, FPS: 5.8096
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 24, Iter Time: 0.6885s, FPS: 5.8097
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Consumer: Got data block 28.
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Producer: Real data chunk 33/63 placed in queue. 
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:13 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 12.4287s
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Chunk 34: calculating flow Frame 136 -> 140
+x265 [info]: frame I:      1, Avg QP:24.52  kb/s: 4069.92 
+x265 [info]: frame P:      1, Avg QP:27.72  kb/s: 1306.32 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.64s (3.13 fps), 2688.12 kb/s, Avg QP:26.12
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 25, Iter Time: 0.5509s, FPS: 7.2615
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 25, Iter Time: 0.5508s, FPS: 7.2624
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Consumer: Got data block 29.
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Producer: Real data chunk 34/63 placed in queue. 
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:13 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 12.8461s
+2026-05-18 08:53:13 - ParallelOrchestrator - INFO - Chunk 35: calculating flow Frame 140 -> 144
+x265 [info]: frame I:      1, Avg QP:24.56  kb/s: 4144.08 
+x265 [info]: frame P:      1, Avg QP:28.21  kb/s: 1536.48 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.81 fps), 2840.28 kb/s, Avg QP:26.39
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 26, Iter Time: 0.5560s, FPS: 7.1941
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 26, Iter Time: 0.5561s, FPS: 7.1931
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Producer: Real data chunk 35/63 placed in queue. 
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Consumer: Got data block 30.
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:14 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 13.2691s
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Chunk 36: calculating flow Frame 144 -> 148
+x265 [info]: frame I:      1, Avg QP:24.54  kb/s: 3955.44 
+x265 [info]: frame P:      1, Avg QP:27.61  kb/s: 1775.52 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.92 fps), 2865.48 kb/s, Avg QP:26.07
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 27, Iter Time: 0.5488s, FPS: 7.2883
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 27, Iter Time: 0.5488s, FPS: 7.2889
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Producer: Real data chunk 36/63 placed in queue. 
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Consumer: Got data block 31.
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:14 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 13.6932s
+2026-05-18 08:53:14 - ParallelOrchestrator - INFO - Chunk 37: calculating flow Frame 148 -> 152
+x265 [info]: frame I:      1, Avg QP:24.48  kb/s: 4016.16 
+x265 [info]: frame P:      1, Avg QP:27.53  kb/s: 1091.52 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.53s (3.76 fps), 2553.84 kb/s, Avg QP:26.01
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 28, Iter Time: 0.5558s, FPS: 7.1969
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 28, Iter Time: 0.5558s, FPS: 7.1964
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Producer: Real data chunk 37/63 placed in queue. 
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Consumer: Got data block 32.
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:15 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 14.1071s
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Chunk 38: calculating flow Frame 152 -> 156
+x265 [info]: frame I:      1, Avg QP:24.49  kb/s: 4084.32 
+x265 [info]: frame P:      1, Avg QP:27.59  kb/s: 789.60  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.50s (4.00 fps), 2436.96 kb/s, Avg QP:26.04
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 29, Iter Time: 0.6939s, FPS: 5.7643
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Consumer: Got data block 33.
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 29, Iter Time: 0.6941s, FPS: 5.7626
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Producer: Real data chunk 38/63 placed in queue. 
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:15 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 14.6675s
+2026-05-18 08:53:15 - ParallelOrchestrator - INFO - Chunk 39: calculating flow Frame 156 -> 160
+x265 [info]: frame I:      1, Avg QP:24.55  kb/s: 4025.76 
+x265 [info]: frame P:      1, Avg QP:27.90  kb/s: 1554.48 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.65s (3.10 fps), 2790.12 kb/s, Avg QP:26.23
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:16 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 30, Iter Time: 0.5472s, FPS: 7.3096
+2026-05-18 08:53:16 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 30, Iter Time: 0.5470s, FPS: 7.3123
+2026-05-18 08:53:16 - ParallelOrchestrator - INFO - Producer: Real data chunk 39/63 placed in queue. 
+2026-05-18 08:53:16 - ParallelOrchestrator - INFO - Consumer: Got data block 34.
+2026-05-18 08:53:16 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:16 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 15.0814s
+2026-05-18 08:53:16 - ParallelOrchestrator - INFO - Chunk 40: calculating flow Frame 160 -> 164
+x265 [info]: frame I:      1, Avg QP:24.57  kb/s: 3858.48 
+x265 [info]: frame P:      1, Avg QP:27.76  kb/s: 1781.28 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.85 fps), 2819.88 kb/s, Avg QP:26.17
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 31, Iter Time: 0.5361s, FPS: 7.4618
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 31, Iter Time: 0.5361s, FPS: 7.4617
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Consumer: Got data block 35.
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Producer: Real data chunk 40/63 placed in queue. 
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:17 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 15.5116s
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Chunk 41: calculating flow Frame 164 -> 168
+x265 [info]: frame I:      1, Avg QP:24.60  kb/s: 4323.84 
+x265 [info]: frame P:      1, Avg QP:28.02  kb/s: 1418.64 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.96 fps), 2871.24 kb/s, Avg QP:26.31
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 32, Iter Time: 0.5720s, FPS: 6.9929
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 32, Iter Time: 0.5720s, FPS: 6.9935
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Consumer: Got data block 36.
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Producer: Real data chunk 41/63 placed in queue. 
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:17 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 15.9228s
+2026-05-18 08:53:17 - ParallelOrchestrator - INFO - Chunk 42: calculating flow Frame 168 -> 172
+x265 [info]: frame I:      1, Avg QP:24.62  kb/s: 4355.04 
+x265 [info]: frame P:      1, Avg QP:28.00  kb/s: 1952.64 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.87 fps), 3153.84 kb/s, Avg QP:26.31
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 33, Iter Time: 0.5499s, FPS: 7.2739
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 33, Iter Time: 0.5500s, FPS: 7.2732
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Producer: Real data chunk 42/63 placed in queue. 
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Consumer: Got data block 37.
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:18 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 16.3394s
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Chunk 43: calculating flow Frame 172 -> 176
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4312.08 
+x265 [info]: frame P:      1, Avg QP:28.03  kb/s: 1395.84 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.90 fps), 2853.96 kb/s, Avg QP:26.32
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 34, Iter Time: 0.6947s, FPS: 5.7578
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 34, Iter Time: 0.6947s, FPS: 5.7579
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Consumer: Got data block 38.
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Producer: Real data chunk 43/63 placed in queue. 
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:18 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 16.9009s
+2026-05-18 08:53:18 - ParallelOrchestrator - INFO - Chunk 44: calculating flow Frame 176 -> 180
+x265 [info]: frame I:      1, Avg QP:24.60  kb/s: 4459.20 
+x265 [info]: frame P:      1, Avg QP:28.06  kb/s: 910.08  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.68s (2.95 fps), 2684.64 kb/s, Avg QP:26.33
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 35, Iter Time: 0.5196s, FPS: 7.6986
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 35, Iter Time: 0.5197s, FPS: 7.6972
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Consumer: Got data block 39.
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Producer: Real data chunk 44/63 placed in queue. 
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:19 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 17.3224s
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Chunk 45: calculating flow Frame 180 -> 184
+x265 [info]: frame I:      1, Avg QP:24.62  kb/s: 4494.48 
+x265 [info]: frame P:      1, Avg QP:27.56  kb/s: 782.40  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.50s (3.97 fps), 2638.44 kb/s, Avg QP:26.09
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 36, Iter Time: 0.5854s, FPS: 6.8329
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 36, Iter Time: 0.5853s, FPS: 6.8342
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Producer: Real data chunk 45/63 placed in queue. 
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Consumer: Got data block 40.
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:19 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 17.7472s
+2026-05-18 08:53:19 - ParallelOrchestrator - INFO - Chunk 46: calculating flow Frame 184 -> 188
+x265 [info]: frame I:      1, Avg QP:24.63  kb/s: 4512.00 
+x265 [info]: frame P:      1, Avg QP:27.84  kb/s: 596.40  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.85 fps), 2554.20 kb/s, Avg QP:26.23
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:20 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 37, Iter Time: 0.5596s, FPS: 7.1481
+2026-05-18 08:53:20 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 37, Iter Time: 0.5595s, FPS: 7.1491
+2026-05-18 08:53:20 - ParallelOrchestrator - INFO - Producer: Real data chunk 46/63 placed in queue. 
+2026-05-18 08:53:20 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:20 - ParallelOrchestrator - INFO - Consumer: Got data block 41.
+2026-05-18 08:53:20 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 18.1648s
+2026-05-18 08:53:20 - ParallelOrchestrator - INFO - Chunk 47: calculating flow Frame 188 -> 192
+x265 [info]: frame I:      1, Avg QP:24.66  kb/s: 4604.64 
+x265 [info]: frame P:      1, Avg QP:27.94  kb/s: 492.96  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.50s (4.02 fps), 2548.80 kb/s, Avg QP:26.30
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 38, Iter Time: 0.5585s, FPS: 7.1620
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 38, Iter Time: 0.5585s, FPS: 7.1618
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Producer: Real data chunk 47/63 placed in queue. 
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Consumer: Got data block 42.
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:21 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 18.5902s
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Chunk 48: calculating flow Frame 192 -> 196
+x265 [info]: frame I:      1, Avg QP:24.65  kb/s: 4678.56 
+x265 [info]: frame P:      1, Avg QP:28.06  kb/s: 432.24  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.83 fps), 2555.40 kb/s, Avg QP:26.36
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 39, Iter Time: 0.6889s, FPS: 5.8068
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 39, Iter Time: 0.6890s, FPS: 5.8056
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Consumer: Got data block 43.
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Producer: Real data chunk 48/63 placed in queue. 
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:21 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 19.1460s
+2026-05-18 08:53:21 - ParallelOrchestrator - INFO - Chunk 49: calculating flow Frame 196 -> 200
+x265 [info]: frame I:      1, Avg QP:24.66  kb/s: 4636.80 
+x265 [info]: frame P:      1, Avg QP:28.12  kb/s: 277.68  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.65s (3.08 fps), 2457.24 kb/s, Avg QP:26.39
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 40, Iter Time: 0.5472s, FPS: 7.3099
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 40, Iter Time: 0.5472s, FPS: 7.3103
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Consumer: Got data block 44.
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Producer: Real data chunk 49/63 placed in queue. 
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:22 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 19.5758s
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Chunk 50: calculating flow Frame 200 -> 204
+x265 [info]: frame I:      1, Avg QP:24.65  kb/s: 4619.76 
+x265 [info]: frame P:      1, Avg QP:28.48  kb/s: 794.64  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.90 fps), 2707.20 kb/s, Avg QP:26.56
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 41, Iter Time: 0.5637s, FPS: 7.0964
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 41, Iter Time: 0.5636s, FPS: 7.0969
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Producer: Real data chunk 50/63 placed in queue. 
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Consumer: Got data block 45.
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:22 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 19.9903s
+2026-05-18 08:53:22 - ParallelOrchestrator - INFO - Chunk 51: calculating flow Frame 204 -> 208
+x265 [info]: frame I:      1, Avg QP:24.70  kb/s: 4336.80 
+x265 [info]: frame P:      1, Avg QP:28.14  kb/s: 1843.20 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.53s (3.78 fps), 3090.00 kb/s, Avg QP:26.42
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 42, Iter Time: 0.5440s, FPS: 7.3533
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 42, Iter Time: 0.5440s, FPS: 7.3531
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Producer: Real data chunk 51/63 placed in queue. 
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Consumer: Got data block 46.
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:23 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 20.4009s
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Chunk 52: calculating flow Frame 208 -> 212
+x265 [info]: frame I:      1, Avg QP:24.65  kb/s: 4307.28 
+x265 [info]: frame P:      1, Avg QP:28.02  kb/s: 1638.72 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.89 fps), 2973.00 kb/s, Avg QP:26.33
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 43, Iter Time: 0.5507s, FPS: 7.2635
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Producer: Real data chunk 52/63 placed in queue. 
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Consumer: Got data block 47.
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 43, Iter Time: 0.5511s, FPS: 7.2579
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:23 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 20.8185s
+2026-05-18 08:53:23 - ParallelOrchestrator - INFO - Chunk 53: calculating flow Frame 212 -> 216
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4363.20 
+x265 [info]: frame P:      1, Avg QP:28.22  kb/s: 918.72  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.83 fps), 2640.96 kb/s, Avg QP:26.42
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:24 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 44, Iter Time: 0.6863s, FPS: 5.8280
+2026-05-18 08:53:24 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 44, Iter Time: 0.6860s, FPS: 5.8311
+2026-05-18 08:53:24 - ParallelOrchestrator - INFO - Consumer: Got data block 48.
+2026-05-18 08:53:24 - ParallelOrchestrator - INFO - Producer: Real data chunk 53/63 placed in queue. 
+2026-05-18 08:53:24 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:24 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 21.3710s
+2026-05-18 08:53:24 - ParallelOrchestrator - INFO - Chunk 54: calculating flow Frame 216 -> 220
+x265 [info]: frame I:      1, Avg QP:24.60  kb/s: 4341.60 
+x265 [info]: frame P:      1, Avg QP:28.26  kb/s: 624.24  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.63s (3.16 fps), 2482.92 kb/s, Avg QP:26.43
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 45, Iter Time: 0.5459s, FPS: 7.3269
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 45, Iter Time: 0.5459s, FPS: 7.3277
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Producer: Real data chunk 54/63 placed in queue. 
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Consumer: Got data block 49.
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:25 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 21.7919s
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Chunk 55: calculating flow Frame 220 -> 224
+x265 [info]: frame I:      1, Avg QP:24.59  kb/s: 4259.28 
+x265 [info]: frame P:      1, Avg QP:28.08  kb/s: 889.44  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.54s (3.72 fps), 2574.36 kb/s, Avg QP:26.33
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 46, Iter Time: 0.5551s, FPS: 7.2057
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 46, Iter Time: 0.5551s, FPS: 7.2053
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Producer: Real data chunk 55/63 placed in queue. 
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Consumer: Got data block 50.
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:25 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 22.2057s
+2026-05-18 08:53:25 - ParallelOrchestrator - INFO - Chunk 56: calculating flow Frame 224 -> 228
+x265 [info]: frame I:      1, Avg QP:24.60  kb/s: 4022.40 
+x265 [info]: frame P:      1, Avg QP:28.04  kb/s: 1733.04 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.85 fps), 2877.72 kb/s, Avg QP:26.32
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 47, Iter Time: 0.5521s, FPS: 7.2452
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Producer: Real data chunk 56/63 placed in queue. 
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Consumer: Got data block 51.
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 47, Iter Time: 0.5527s, FPS: 7.2376
+2026-05-18 08:53:26 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 22.6243s
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Chunk 57: calculating flow Frame 228 -> 232
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4348.32 
+x265 [info]: frame P:      1, Avg QP:27.78  kb/s: 900.96  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.53s (3.80 fps), 2624.64 kb/s, Avg QP:26.20
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 48, Iter Time: 0.5491s, FPS: 7.2852
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 48, Iter Time: 0.5485s, FPS: 7.2931
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Producer: Real data chunk 57/63 placed in queue. 
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Consumer: Got data block 52.
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:26 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 23.0401s
+2026-05-18 08:53:26 - ParallelOrchestrator - INFO - Chunk 58: calculating flow Frame 232 -> 236
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4270.80 
+x265 [info]: frame P:      1, Avg QP:28.07  kb/s: 613.20  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.83 fps), 2442.00 kb/s, Avg QP:26.34
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:27 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 49, Iter Time: 0.6893s, FPS: 5.8032
+2026-05-18 08:53:27 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 49, Iter Time: 0.6893s, FPS: 5.8028
+2026-05-18 08:53:27 - ParallelOrchestrator - INFO - Consumer: Got data block 53.
+2026-05-18 08:53:27 - ParallelOrchestrator - INFO - Producer: Real data chunk 58/63 placed in queue. 
+2026-05-18 08:53:27 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:27 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 23.5960s
+2026-05-18 08:53:27 - ParallelOrchestrator - INFO - Chunk 59: calculating flow Frame 236 -> 240
+x265 [info]: frame I:      1, Avg QP:24.60  kb/s: 4216.08 
+x265 [info]: frame P:      1, Avg QP:27.91  kb/s: 1661.52 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.65s (3.10 fps), 2938.80 kb/s, Avg QP:26.26
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 50, Iter Time: 0.5511s, FPS: 7.2581
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 50, Iter Time: 0.5510s, FPS: 7.2592
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Consumer: Got data block 54.
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Producer: Real data chunk 59/63 placed in queue. 
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:28 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 24.0139s
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Chunk 60: calculating flow Frame 240 -> 244
+x265 [info]: frame I:      1, Avg QP:24.61  kb/s: 4009.92 
+x265 [info]: frame P:      1, Avg QP:27.99  kb/s: 1930.56 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.52s (3.84 fps), 2970.24 kb/s, Avg QP:26.30
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 51, Iter Time: 0.5515s, FPS: 7.2534
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 51, Iter Time: 0.5515s, FPS: 7.2530
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Producer: Real data chunk 60/63 placed in queue. 
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Consumer: Got data block 55.
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:28 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 24.4318s
+2026-05-18 08:53:28 - ParallelOrchestrator - INFO - Chunk 61: calculating flow Frame 244 -> 248
+x265 [info]: frame I:      1, Avg QP:24.62  kb/s: 4482.96 
+x265 [info]: frame P:      1, Avg QP:27.81  kb/s: 636.96  
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.51s (3.91 fps), 2559.96 kb/s, Avg QP:26.22
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 52, Iter Time: 0.5515s, FPS: 7.2523
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 52, Iter Time: 0.5516s, FPS: 7.2521
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Producer: Real data chunk 61/63 placed in queue. 
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Consumer: Got data block 56.
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:29 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 24.8501s
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Chunk 62: calculating flow Frame 248 -> 252
+x265 [info]: frame I:      1, Avg QP:24.63  kb/s: 4477.92 
+x265 [info]: frame P:      1, Avg QP:27.95  kb/s: 1680.24 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 0.53s (3.77 fps), 3079.08 kb/s, Avg QP:26.29
+x265 [info]: HEVC encoder version 4.1+217-f716329fa
+x265 [info]: build info [Linux][GCC 9.4.0][64 bit] 8bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [warning]: Max TU size should be less than or equal to max CU size, setting max TU size = 16
+x265 [warning]: QGSize should be less than or equal to maxCUSize, setting QGSize = 16
+x265 [info]: Main profile, Level-3 (Main tier)
+x265 [info]: Thread pool created using 36 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 5 / wpp(30 rows)
+x265 [warning]: Source height < 720p; disabling lookahead-slices
+x265 [info]: Coding QT: max CU size, min CU size : 16 / 8
+x265 [info]: Residual QT: max TU size, max depth : 16 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 25 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 16 / 1
+x265 [info]: Rate Control / qCompress            : CRF-23.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing deblock sao
+****************************************
+Run in sparse mode!!!
+****************************************
+scatter_total=4.01 GB
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 53, Iter Time: 0.5519s, FPS: 7.2480
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 53, Iter Time: 0.5518s, FPS: 7.2486
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Producer: Real data chunk 62/63 placed in queue. 
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Consumer: Got data block 57.
+2026-05-18 08:53:29 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:29 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 25.2684s
+scatter_total=4.01 GB
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 54, Iter Time: 0.5984s, FPS: 6.6843
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 54, Iter Time: 0.5984s, FPS: 6.6843
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Consumer: Got data block 58.
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Producer: Real data chunk 63/63 placed in queue. 
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Queue len: 5
+2026-05-18 08:53:30 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 25.7418s
+scatter_total=4.01 GB
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 55, Iter Time: 0.4611s, FPS: 8.6758
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 55, Iter Time: 0.4611s, FPS: 8.6758
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Consumer: Got data block 59.
+2026-05-18 08:53:30 - ParallelOrchestrator - INFO - Producer: Flush chunk 1/3 placed in queue.
+2026-05-18 08:53:30 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 26.0613s
+scatter_total=4.01 GB
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 56, Iter Time: 0.4669s, FPS: 8.5676
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 56, Iter Time: 0.4669s, FPS: 8.5677
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Consumer: Got data block 60.
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Producer: Flush chunk 2/3 placed in queue.
+2026-05-18 08:53:31 - ParallelOrchestrator - WARNING - Producer is lagging behind real-time schedule by 26.3948s
+scatter_total=4.01 GB
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 57, Iter Time: 0.4634s, FPS: 8.6313
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 57, Iter Time: 0.4634s, FPS: 8.6310
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Producer: Flush chunk 3/3 placed in queue.
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Consumer: Got data block 61.
+2026-05-18 08:53:31 - ParallelOrchestrator - INFO - Producer thread finished. All data blocks produced.
+scatter_total=4.01 GB
+2026-05-18 08:53:32 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 58, Iter Time: 0.4635s, FPS: 8.6301
+2026-05-18 08:53:32 - ParallelOrchestrator - INFO - Consumer: Got data block 62.
+2026-05-18 08:53:32 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 58, Iter Time: 0.4636s, FPS: 8.6287
+scatter_total=4.01 GB
+2026-05-18 08:53:32 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 59, Iter Time: 0.5953s, FPS: 6.7193
+2026-05-18 08:53:32 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 59, Iter Time: 0.5952s, FPS: 6.7203
+2026-05-18 08:53:32 - ParallelOrchestrator - INFO - Consumer: Got data block 63.
+scatter_total=4.01 GB
+2026-05-18 08:53:33 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 60, Iter Time: 0.5971s, FPS: 6.6985
+2026-05-18 08:53:33 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 60, Iter Time: 0.5972s, FPS: 6.6983
+2026-05-18 08:53:33 - ParallelOrchestrator - INFO - Consumer: Got data block 64.
+scatter_total=4.01 GB
+2026-05-18 08:53:33 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 61, Iter Time: 0.5974s, FPS: 6.6953
+2026-05-18 08:53:33 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 61, Iter Time: 0.5974s, FPS: 6.6955
+2026-05-18 08:53:33 - ParallelOrchestrator - INFO - Consumer: Got data block 65.
+scatter_total=4.01 GB
+2026-05-18 08:53:34 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 62, Iter Time: 0.5987s, FPS: 6.6808
+2026-05-18 08:53:34 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 62, Iter Time: 0.5987s, FPS: 6.6806
+2026-05-18 08:53:34 - ParallelOrchestrator - INFO - Consumer: Got data block 66.
+scatter_total=4.01 GB
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - Consumer: Enqueued output for iter 63, Iter Time: 0.5939s, FPS: 6.7352
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - Saver: Render Video Chunk for iter 63, Iter Time: 0.5939s, FPS: 6.7352
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - Saver thread received termination signal.
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - Average End-to-End FPS (Saver-side, after pipeline fill): 6.7449
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - Saver thread finished.
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - ==================================================
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - Performance Summary
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - ==================================================
+Video shape before trimming: (257, 480, 832, 3)
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - Average End-to-End FPS (Consumer-side, after pipeline fill): 6.9577
+2026-05-18 08:53:35 - ParallelOrchestrator - INFO - Final video shape: (254, 480, 832, 3)
+It is recommended to use `export_to_video` with `imageio` and `imageio-ffmpeg` as a backend. 
+These libraries are not present in your environment. Attempting to use legacy OpenCV backend to export video. 
+Support for the OpenCV backend will be deprecated in a future Diffusers version
+2026-05-18 08:53:36 - ParallelOrchestrator - INFO - Video saved to: outputs/motionflow/output_gather_block_vae_0.1_dit_0.1_steps_4.mp4
+2026-05-18 08:53:36 - ParallelOrchestrator - INFO - Parallel inference with timing completed.
+x265 [info]: frame I:      1, Avg QP:24.59  kb/s: 4257.12 
+x265 [info]: frame P:      1, Avg QP:28.27  kb/s: 1002.96 
+x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%
+
+encoded 2 frames in 7.18s (0.28 fps), 2630.04 kb/s, Avg QP:26.43
+Peak GPU memory: 21.43 GB

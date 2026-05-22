@@ -68,8 +68,8 @@ from utils.vae_utils.mem_stats import collect_scatter_cache_modules, feat_map_nb
 
 from deps.sige3d.torch_kernels.backend import set_kernel_backend
 
-from debugUtil import enable_custom_repr
-enable_custom_repr()
+# from debugUtil import enable_custom_repr
+# enable_custom_repr()
 
 LOG_HANDLERS = None
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -221,7 +221,11 @@ class OpticalFlowCalculator:
                  occlusion_method: str = 'quantile',
                  top_k_percentage: float=(0.1,0.1),
                  morph_kernel_size: int = 7,
-                 conn_comp_threshold_quantile: float = 0.75
+                 conn_comp_threshold_quantile: float = 0.75,
+                 adaptive_sparsity: bool = False,
+                 cdf_coverage: float = 0.7,
+                 r_min: float = 0.08,
+                 r_max: float = 0.30,
                 ):
         self.device = device
         self.logger = logging.getLogger("OpticalFlowCalculator")
@@ -231,6 +235,10 @@ class OpticalFlowCalculator:
         self.top_k_percentage=top_k_percentage
         self.morph_kernel_size = morph_kernel_size
         self.conn_comp_threshold_quantile = conn_comp_threshold_quantile
+        self.adaptive_sparsity = bool(adaptive_sparsity)
+        self.cdf_coverage = float(cdf_coverage)
+        self.r_min = float(r_min)
+        self.r_max = float(r_max)
 
         self.logger.info(f"Using occlusion mask generation method: '{self.occlusion_method}'")
 
@@ -268,10 +276,22 @@ class OpticalFlowCalculator:
 
             if self.occlusion_method in ['exact','gather_block']:
                 num_elements = single_occ_map.numel()
-                k = int(num_elements * self.top_k_percentage[1])
+                # Adaptive sparsity (paper §3.4): override fixed dit_ratio with the
+                # smallest fraction whose top tokens cover `cdf_coverage` of total motion.
+                if self.adaptive_sparsity:
+                    from utils.vae_utils.mask_utils import compute_cdf_ratio
+                    dit_ratio = compute_cdf_ratio(
+                        single_occ_map,
+                        coverage_rho=self.cdf_coverage,
+                        r_min=self.r_min,
+                        r_max=self.r_max,
+                    )
+                else:
+                    dit_ratio = self.top_k_percentage[1]
+                k = int(num_elements * dit_ratio)
 
                 # 确保 k 至少为 1 (如果百分比 > 0)，且不超过总元素数
-                k = max(1, min(k, num_elements)) if self.top_k_percentage[1] > 0 else 0
+                k = max(1, min(k, num_elements)) if dit_ratio > 0 else 0
 
                 if k == 0:
                     binary_mask = torch.zeros_like(single_occ_map, dtype=torch.bool)
@@ -765,55 +785,60 @@ class ParallelInferenceOrchestrator:
                     cur_frame_tensor = input_video_original[:, :, cur_frame_idx].to(self.device, torch.float32)
 
                     flow_data = flow_calculator.calculate_flow(ref_frame_tensor, cur_frame_tensor)
-                    bwd_flow, bwd_occ = flow_data
-
-                    # print(latents.shape,bwd_flow.shape,bwd_occ.shape)
-                
-                    if occlusion_method == "gather_block":
-                        masks_enc = build_gather_block_masks(bwd_occ.squeeze(0).squeeze(0), top_k_percentage=top_k_percentage[0])
-                    else:
-                        # Encoder masks
-                        mask_enc = dilate_mask(bwd_occ.squeeze(0).squeeze(0), int(mask_dilate))
-                        masks_enc = downsample_mask(
-                            mask_enc,
-                            min_res=tuple(min_res),
-                            dilation=int(mask_dilate),
+                    if flow_data is None:
+                        # No-flow baseline (--flow_model none): skip mask construction
+                        # and feed the VAE without sparse hints. is_nocache must be True
+                        # so the encoder doesn't enter sparse mode.
+                        latents = self._stream_encode(inp, mask=None, flow=None, is_nocache=is_nocache)
+                        latents = latents.transpose(2, 1).contiguous()
+                        noise_scale, current_step = compute_noise_scale_and_step(
+                            input_video_original, end_idx, chunk_size, noise_scale, init_noise_scale
                         )
-                    ref_frame_idx = cur_frame_idx
+                        noise = torch.randn_like(latents)
+                        noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
+                        ref_frame_idx = cur_frame_idx
+                        flow_data = None  # forwarded to DiT, which already handles None
+                    else:
+                        bwd_flow, bwd_occ = flow_data
 
-                    # start_event = torch.cuda.Event(enable_timing=True)
-                    # end_event = torch.cuda.Event(enable_timing=True)
-                    # torch.cuda.synchronize()  # 保证前面操作完成
-                    # start_event.record()
+                        if occlusion_method == "gather_block":
+                            masks_enc = build_gather_block_masks(
+                                bwd_occ.squeeze(0).squeeze(0),
+                                top_k_percentage=top_k_percentage[0],
+                                adaptive=flow_calculator.adaptive_sparsity,
+                                cdf_coverage=flow_calculator.cdf_coverage,
+                                r_min=flow_calculator.r_min,
+                                r_max=flow_calculator.r_max,
+                            )
+                        else:
+                            mask_enc = dilate_mask(bwd_occ.squeeze(0).squeeze(0), int(mask_dilate))
+                            masks_enc = downsample_mask(
+                                mask_enc,
+                                min_res=tuple(min_res),
+                                dilation=int(mask_dilate),
+                            )
+                        ref_frame_idx = cur_frame_idx
 
-                    latents = self._stream_encode(inp, mask=masks_enc, flow=bwd_flow.squeeze(0).permute(1, 2, 0).contiguous(),is_nocache=is_nocache)
-                    
-                    # end_event.record()
-                    # torch.cuda.synchronize()
-                    # elapsed_time_ms = start_event.elapsed_time(end_event)
-                    # print(f"stream_encode GPU time: {elapsed_time_ms:.3f} ms")
+                        latents = self._stream_encode(inp, mask=masks_enc, flow=bwd_flow.squeeze(0).permute(1, 2, 0).contiguous(),is_nocache=is_nocache)
+                        latents = latents.transpose(2, 1).contiguous()
 
-                    latents = latents.transpose(2, 1).contiguous()
+                        noise_scale, current_step = compute_noise_scale_and_step(
+                            input_video_original, end_idx, chunk_size, noise_scale, init_noise_scale
+                        )
+                        noise = torch.randn_like(latents)
+                        noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
 
-                    noise_scale, current_step = compute_noise_scale_and_step(
-                        input_video_original, end_idx, chunk_size, noise_scale, init_noise_scale
-                    )
-                    noise = torch.randn_like(latents)
-                    noisy_latents = noise * noise_scale + latents * (1 - noise_scale)
+                        latent_h, latent_w=latents.shape[-2:]
+                        target_h=latent_h
+                        target_w=latent_w
+                        downsampled_flow = F.interpolate(bwd_flow, size=(target_h, target_w), mode='bilinear', align_corners=False)
+                        downsampled_flow *= (float(target_h) / bwd_flow.shape[2])
+                        downsampled_occ= F.interpolate(bwd_occ, size=(target_h, target_w), mode='bilinear', align_corners=False)
+                        latent_binary_mask = flow_calculator.compute_binary_occlusion_mask(downsampled_occ)
 
-
-
-                    latent_h, latent_w=latents.shape[-2:]
-                    target_h=latent_h
-                    target_w=latent_w
-                    downsampled_flow = F.interpolate(bwd_flow, size=(target_h, target_w), mode='bilinear', align_corners=False)
-                    downsampled_flow *= (float(target_h) / bwd_flow.shape[2])
-                    downsampled_occ= F.interpolate(bwd_occ, size=(target_h, target_w), mode='bilinear', align_corners=False)
-                    latent_binary_mask = flow_calculator.compute_binary_occlusion_mask(downsampled_occ)
-
-                    downsampled_occ_half= F.interpolate(bwd_occ, size=(target_h//2, target_w//2), mode='bilinear', align_corners=False)
-                    latent_binary_mask_half = flow_calculator.compute_binary_occlusion_mask(downsampled_occ_half)
-                    flow_data= (downsampled_flow,latent_binary_mask,latent_binary_mask_half)
+                        downsampled_occ_half= F.interpolate(bwd_occ, size=(target_h//2, target_w//2), mode='bilinear', align_corners=False)
+                        latent_binary_mask_half = flow_calculator.compute_binary_occlusion_mask(downsampled_occ_half)
+                        flow_data= (downsampled_flow,latent_binary_mask,latent_binary_mask_half)
 
                     # if (flow_data!=None): 
                     #     warped_frame = universal_flow_warp(ref_frame_tensor, bwd_flow)
@@ -1133,6 +1158,14 @@ def main():
     parser.add_argument("--dit_ratio", type=float, default=0.1, help="Top percentage of occlusion values to consider as masked.")
 
     parser.add_argument("--use_cached_text_embedding", action="store_true", help="If set, load pre-computed text embeddings from 'cached_text_embedding.pt' instead of initializing the text encoder.")
+    parser.add_argument("--adaptive_sparsity", action="store_true",
+                        help="Paper §3.4 CDF-based dynamic sparsity ratio (overrides --vae_ratio/--dit_ratio).")
+    parser.add_argument("--cdf_coverage", type=float, default=0.7,
+                        help="Target motion coverage rho (paper default 0.7).")
+    parser.add_argument("--r_min", type=float, default=0.08,
+                        help="Lower clamp on adaptive ratio (paper default 0.08).")
+    parser.add_argument("--r_max", type=float, default=0.30,
+                        help="Upper clamp on adaptive ratio (paper default 0.30).")
     parser.add_argument("--morph_kernel_size", type=int, default=7, help="Kernel size for morphological opening operation.")
     parser.add_argument("--mask_dilate", type=int, default=6, help="Dilation (pixels) applied to the base update mask before downsample_mask().")
     parser.add_argument("--min_res", nargs=2, type=int, default=(40, 40), metavar=("H", "W"), help="Minimum resolution for downsampled masks passed to SIGE (GMFlow).")
@@ -1232,9 +1265,16 @@ def main():
                 x265_params=x265_params,
                 occlusion_method=args.occlusion_method,
                 top_k_percentage=ratio_list,
+                adaptive_sparsity=args.adaptive_sparsity,
+                cdf_coverage=args.cdf_coverage,
+                r_min=args.r_min,
+                r_max=args.r_max,
                 # morph_kernel_size=args.morph_kernel_size,
                 # conn_comp_threshold_quantile=args.conn_comp_thresh
             )
+            if args.adaptive_sparsity:
+                logging.info(f"Adaptive sparsity ON: rho={args.cdf_coverage}, "
+                             f"r in [{args.r_min}, {args.r_max}]")
     else:
         input_video_original = None
         t = args.num_frames
