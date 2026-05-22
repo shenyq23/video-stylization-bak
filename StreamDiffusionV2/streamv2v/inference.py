@@ -781,17 +781,17 @@ class ParallelInferenceOrchestrator:
                         )
                     ref_frame_idx = cur_frame_idx
 
-                    # start_event = torch.cuda.Event(enable_timing=True)
-                    # end_event = torch.cuda.Event(enable_timing=True)
-                    # torch.cuda.synchronize()  # 保证前面操作完成
-                    # start_event.record()
+                    start_event = torch.cuda.Event(enable_timing=True)
+                    end_event = torch.cuda.Event(enable_timing=True)
+                    torch.cuda.synchronize()  # 保证前面操作完成
+                    start_event.record()
 
                     latents = self._stream_encode(inp, mask=masks_enc, flow=bwd_flow.squeeze(0).permute(1, 2, 0).contiguous(),is_nocache=is_nocache)
                     
-                    # end_event.record()
-                    # torch.cuda.synchronize()
-                    # elapsed_time_ms = start_event.elapsed_time(end_event)
-                    # print(f"stream_encode GPU time: {elapsed_time_ms:.3f} ms")
+                    end_event.record()
+                    torch.cuda.synchronize()
+                    elapsed_time_ms = start_event.elapsed_time(end_event)
+                    print(f"stream_encode GPU time: {elapsed_time_ms:.3f} ms")
 
                     latents = latents.transpose(2, 1).contiguous()
 
@@ -1029,16 +1029,17 @@ class ParallelInferenceOrchestrator:
                                     min_res=tuple(min_res),
                                     dilation=int(mask_dilate),
                                 )
-                        # start_event = torch.cuda.Event(enable_timing=True)
-                        # end_event = torch.cuda.Event(enable_timing=True)
-                        # torch.cuda.synchronize()  # 保证前面操作完成
-                        # start_event.record()
+                        start_event = torch.cuda.Event(enable_timing=True)
+                        end_event = torch.cuda.Event(enable_timing=True)
+                        torch.cuda.synchronize()  # 保证前面操作完成
+                        start_event.record()
 
                         video_out = self._stream_decode_to_pixel(denoised_pred[[-1]], mask=None, flow=None)
-                        # end_event.record()
-                        # torch.cuda.synchronize()
-                        # elapsed_time_ms = start_event.elapsed_time(end_event)
-                        # print(f"stream_decode GPU time: {elapsed_time_ms:.3f} ms")
+                        
+                        end_event.record()
+                        torch.cuda.synchronize()
+                        elapsed_time_ms = start_event.elapsed_time(end_event)
+                        print(f"stream_decode GPU time: {elapsed_time_ms:.3f} ms")
 
 
                     self.processed += 1
