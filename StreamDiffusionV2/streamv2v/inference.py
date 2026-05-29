@@ -1238,8 +1238,7 @@ def main():
     ratio_list=(args.vae_ratio,args.dit_ratio)
 
     if args.video_path is not None:
-        ALIGNMENT = 32
-        ALIGNMENT = 32
+        ALIGNMENT = 16  # VAE 8x downsample x DiT 2x patchify = 16; keeps 720 exact
         new_height = (args.height // ALIGNMENT) * ALIGNMENT
         new_width = (args.width // ALIGNMENT) * ALIGNMENT
         if new_height != args.height or new_width != args.width:

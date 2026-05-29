@@ -922,7 +922,6 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         )
 
         use_sparse=(latent_flow_data!=None and self.flow_guidance_cache!=None) and self.count%5!=0
-        sparse_bs = 2  # ===================== 设定前几个 chunk 做稀疏 =====================
         pack={}
         pack['use_sparse'] = use_sparse
 
@@ -937,6 +936,9 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         _dit_warp_setup = begin_segment("DiT/Warp") if use_sparse else None
         if use_sparse:
             B, S, C = x.shape
+            # Half the streaming-batch chunks (the early high-noise ones) are sparse:
+            # B=4 (4-step) -> 2, B=2 (2-step) -> 1. Matches paper B_s.
+            sparse_bs = B // 2
             dense_bs = B - sparse_bs
             # --- a. 拆分数据和掩码 ---
             x_sparse_full = x[:sparse_bs]

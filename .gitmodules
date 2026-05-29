@@ -1,9 +1,9 @@
 [submodule "deps/gmflow"]
 	path = deps/gmflow
-	url = git@github.com:haofeixu/gmflow.git
+	url = https://github.com/haofeixu/gmflow.git
 [submodule "deps/RAFT"]
 	path = deps/RAFT
-	url = git@github.com:princeton-vl/RAFT.git
+	url = https://github.com/princeton-vl/RAFT.git
 [submodule "deps/x265"]
 	path = deps/x265
 	url = git@git.corp.kuaishou.com:algorithm/video/codec/x265.git

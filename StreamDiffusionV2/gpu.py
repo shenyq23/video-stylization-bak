@@ -391,14 +391,19 @@ def main():
         dataset = TextDataset(args.prompt_file_path)
         prompts = [dataset[0]]
 
-        ALIGNMENT = 32
+        ALIGNMENT = 16  # VAE 8x downsample x DiT 2x patchify = 16; keeps 720 exact
         new_height = (args.height // ALIGNMENT) * ALIGNMENT
         new_width = (args.width // ALIGNMENT) * ALIGNMENT
         if (new_height, new_width) != (args.height, args.width):
             logging.warning(f"Resolution adjusted for alignment: {args.height}x{args.width} -> {new_height}x{new_width}")
 
         logging.info(f"Loading video {args.video_path}")
-        input_video_original = load_mp4_as_tensor(args.video_path, resize_hw=(new_height, new_width)).unsqueeze(0)
+        # Profiling only needs cold-start (5) + 6 warm-up chunks (24) + 1 inference
+        # chunk. Cap loaded frames so the full clip doesn't sit on GPU — at 720p the
+        # whole 254-frame tensor is ~1.4 GB and causes OOM during VAE encode.
+        PROFILE_MAX_FRAMES = 48
+        input_video_original = load_mp4_as_tensor(
+            args.video_path, max_frames=PROFILE_MAX_FRAMES, resize_hw=(new_height, new_width)).unsqueeze(0)
         input_video_original = input_video_original.to(device=device, dtype=dtype)
         logging.info(f"Input video shape: {input_video_original.shape}")
 
