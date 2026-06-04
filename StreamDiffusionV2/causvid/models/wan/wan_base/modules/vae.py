@@ -35,6 +35,8 @@ from utils.vae_utils.op_time_stats import install_sige_op_time_stats, print_sige
 from utils.vae_utils.mask_utils import build_gather_block_masks, dilate_mask, downsample_mask
 from utils.optical_wrapper import GMFlowWrapper, X265MVWrapper, OcclusionComputation  # noqa: E402
 
+from causvid.profiling import PROFILER  # opt-in per-submodule timing (no-op when disabled)
+
 
 from debugUtil import enable_custom_repr
 enable_custom_repr()
@@ -727,35 +729,44 @@ class Encoder3d(SIGEModel3d):
             CausalConv3d(out_dim, z_dim, 3, padding=1))
 
     def forward(self, x, feat_cache=None, feat_idx=[0], is_first_frame=False):
+        # Profiler buckets are named by the *actual* feature-map height at each stage,
+        # so labels reflect the real input resolution: e.g. 480/240/120/60 for a
+        # 480x832 run, or 512/256/128/64 for a square 512 run (the paper's setting).
+        # The record name is evaluated on entry, so a Resample layer is attributed to
+        # the (higher) resolution it consumes before it downsamples.
         # 针对conv1的, 不进行稀疏计算
-        if feat_cache is not None:
-            idx = feat_idx[0]
-            cache_x = x[:, :, -CACHE_T:, :, :].clone()
-            if cache_x.shape[2] < CACHE_T and feat_cache[idx] is not None:
-                # cache last frame of last two chunk
-                cache_x = torch.cat([
-                    feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(
-                        cache_x.device), cache_x
-                ],
-                    dim=2)
-            x = self.conv1(x, feat_cache[idx])
-            feat_cache[idx] = cache_x
-            feat_idx[0] += 1
-        else:
-            x = self.conv1(x)
+        with PROFILER.record(f"VAE {x.shape[-2]}"):
+            if feat_cache is not None:
+                idx = feat_idx[0]
+                cache_x = x[:, :, -CACHE_T:, :, :].clone()
+                if cache_x.shape[2] < CACHE_T and feat_cache[idx] is not None:
+                    # cache last frame of last two chunk
+                    cache_x = torch.cat([
+                        feat_cache[idx][:, :, -1, :, :].unsqueeze(2).to(
+                            cache_x.device), cache_x
+                    ],
+                        dim=2)
+                x = self.conv1(x, feat_cache[idx])
+                feat_cache[idx] = cache_x
+                feat_idx[0] += 1
+            else:
+                x = self.conv1(x)
 
         # downsamples
         for layer in self.downsamples:
-            if feat_cache is not None:
-                # if isinstance(layer, Resample):
-                    # print("Resample forward")
-                x = layer(x, feat_cache, feat_idx, is_first_frame)
-            else:
-                x = layer(x)
+            with PROFILER.record(f"VAE {x.shape[-2]}"):
+                if feat_cache is not None:
+                    # if isinstance(layer, Resample):
+                        # print("Resample forward")
+                    x = layer(x, feat_cache, feat_idx, is_first_frame)
+                else:
+                    x = layer(x)
 
         # print("*" * 40)
         # print("Enter middle blocks")
-        # middle
+        # middle + head run at the deepest (lowest) resolution
+        _mid_head = PROFILER.record(f"VAE {x.shape[-2]}")
+        _mid_head.__enter__()
         for layer in self.middle:
             if isinstance(layer, ResidualBlock) and feat_cache is not None:
                 x = layer(x, feat_cache, feat_idx, is_first_frame)
@@ -790,6 +801,7 @@ class Encoder3d(SIGEModel3d):
                 feat_idx[0] += 1
             else:
                 x = layer(x)
+        _mid_head.__exit__(None, None, None)
         return x
 
 
@@ -1053,14 +1065,13 @@ class WanVAE_(nn.Module):
                     print("*" * 40)
                     print("Run in sparse mode!!!")
                     print("*" * 40)
-                    self.encoder.set_masks(mask)
-                    # t = cuda_time_s(self.encoder.set_masks, mask)
-                    # print(f"[TIMING] encoder.set_masks = {t:.2f} ms")
-
-                    self.encoder.flow_cache(flow)
-                    # t = cuda_time_s(self.encoder.flow_cache, flow)
-                    # print(f"[TIMING] encoder.flow_cache = {t:.2f} ms")
-                    # flow_time_enc.append(t)
+                    # Split into two buckets: "Set Masks" builds the per-layer
+                    # gather/scatter indices (really part of each conv stage's sparse
+                    # setup), "Cache Warp" is the actual optical-flow warp of the caches.
+                    with PROFILER.record("Set Masks"):
+                        self.encoder.set_masks(mask)
+                    with PROFILER.record("Cache Warp"):
+                        self.encoder.flow_cache(flow)
 
                 out = []
                 for i in range(t//4):   # 实际就运行一次，因为t=4

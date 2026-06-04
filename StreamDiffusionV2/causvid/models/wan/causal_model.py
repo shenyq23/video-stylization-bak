@@ -24,6 +24,8 @@ import cv2
 
 from gmflow.geometry import flow_warp as universal_flow_warp
 
+from causvid.profiling import PROFILER  # opt-in per-submodule timing (no-op when disabled)
+
 def visualize_latent_to_image(latent: torch.Tensor) -> np.ndarray:
     """Visualizes a latent tensor by taking the mean across channels and normalizing."""
     if latent.dim() == 4:
@@ -244,14 +246,15 @@ class CausalWanSelfAttention(nn.Module):
 
             # 1. QKV 投射
             # q,k,v shape: [3432, 1536]
-            q = self.norm_q(self.q(x))
-            k = self.norm_k(self.k(x))
-            v = self.v(x)
-            
-            # reshape to [3432, 12, 128]
-            q = q.view(total_tokens, n, d)
-            k = k.view(total_tokens, n, d)
-            v = v.view(total_tokens, n, d)
+            with PROFILER.record("Self Attention"):
+                q = self.norm_q(self.q(x))
+                k = self.norm_k(self.k(x))
+                v = self.v(x)
+
+                # reshape to [3432, 12, 128]
+                q = q.view(total_tokens, n, d)
+                k = k.view(total_tokens, n, d)
+                v = v.view(total_tokens, n, d)
 
             # 2. RoPE
             # roped_query, roped_key shape: [3432, 16, 96]
@@ -260,9 +263,12 @@ class CausalWanSelfAttention(nn.Module):
             # sink_tokens = self.sink_size * frame_seqlen
             current_start_frame = current_start // pack['frame_seqlen']
 
-            roped_query = causal_rope_apply(q, grid_sizes, freqs, current_start_frame, pack).type_as(v)
-            roped_key = causal_rope_apply(k, grid_sizes, freqs, current_start_frame, pack).type_as(v)
+            with PROFILER.record("RoPE"):
+                roped_query = causal_rope_apply(q, grid_sizes, freqs, current_start_frame, pack).type_as(v)
+                roped_key = causal_rope_apply(k, grid_sizes, freqs, current_start_frame, pack).type_as(v)
 
+            _self_attn_region = PROFILER.record("Self Attention")
+            _self_attn_region.__enter__()
             # 3. KV Cache 更新 (需要按批次进行)
             B = pack['sparse_bs'] + pack['dense_bs']
             
@@ -351,6 +357,7 @@ class CausalWanSelfAttention(nn.Module):
 
             x = x.flatten(1)
             x = self.o(x)
+            _self_attn_region.__exit__(None, None, None)
             return x
 
         # print("entering basic self attn:")
@@ -365,9 +372,10 @@ class CausalWanSelfAttention(nn.Module):
             v = self.v(x).view(b, s, n, d)
             return q, k, v
 
-        q, k, v = qkv_fn(x)
+        with PROFILER.record("Self Attention"):
+            q, k, v = qkv_fn(x)
 
-        
+
         # print(latent_flow_data==None,flow_guidance_cache==None,use_flow_guidance)
         # if (use_flow_guidance):
         #     print(x.shape,flow_guidance_cache.shape, latent_flow_data['flow'].shape,latent_flow_data['mask'].shape)
@@ -415,10 +423,12 @@ class CausalWanSelfAttention(nn.Module):
             sink_tokens = self.sink_size * frame_seqlen
             current_start_frame = current_start // frame_seqlen
 
-            roped_query = causal_rope_apply(q, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
-            roped_key = causal_rope_apply(k, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
+            with PROFILER.record("RoPE"):
+                roped_query = causal_rope_apply(q, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
+                roped_key = causal_rope_apply(k, grid_sizes, freqs, start_frame=current_start_frame).type_as(v)
 
-            # 1. 计算环形缓冲区的容量
+            # 1. 计算环形缓冲区的容量 (KV-cache management is intentionally left
+            #    outside the "Self Attention" bucket so it stays comparable to the paper)
             ring_capacity = kv_cache_size - sink_tokens
 
             # 2. 计算每个 Batch 样本的写入起始位置 (O(1) 计算，无需数据搬运)
@@ -450,15 +460,17 @@ class CausalWanSelfAttention(nn.Module):
                 pass
 
             else:
-                x = flash_attn_interface.flash_attn_with_kvcache(
-                    q=roped_query,
-                    k_cache=kv_cache["k"],
-                    v_cache=kv_cache["v"],
-                    cache_seqlens=effective_seqlens,
-                )
+                with PROFILER.record("Self Attention"):
+                    x = flash_attn_interface.flash_attn_with_kvcache(
+                        q=roped_query,
+                        k_cache=kv_cache["k"],
+                        v_cache=kv_cache["v"],
+                        cache_seqlens=effective_seqlens,
+                    )
 
-        x = x.flatten(2)
-        x = self.o(x)
+        with PROFILER.record("Self Attention"):
+            x = x.flatten(2)
+            x = self.o(x)
 
         #torch.cuda.synchronize(x.device)
         end_basic_attn_time = time.time()
@@ -564,7 +576,8 @@ class CausalWanAttentionBlock(nn.Module):
             # context shape: [4, L_ctx, 1536]
             # cross_attn 需要 cu_seqlens 来匹配 packed_x 和 batched_context
             # 假设 cross_attn 内部已适配
-            cross_attn_out = self.cross_attn(self.norm3(x), context, context_lens, crossattn_cache=crossattn_cache, pack=pack)
+            with PROFILER.record("Cross Attention"):
+                cross_attn_out = self.cross_attn(self.norm3(x), context, context_lens, crossattn_cache=crossattn_cache, pack=pack)
             x = x + cross_attn_out
 
             # --- FFN前的调制 ---
@@ -572,9 +585,10 @@ class CausalWanAttentionBlock(nn.Module):
             e4_gathered = e_chunks[4][batch_indices].squeeze(1).squeeze(1)
             norm2_out = self.norm2(x)
             ffn_in = norm2_out * (1 + e4_gathered) + e3_gathered
-            
+
             # --- FFN ---
-            ffn_out = self.ffn(ffn_in) # Shape: [3432, 1536]
+            with PROFILER.record("Linear"):
+                ffn_out = self.ffn(ffn_in) # Shape: [3432, 1536]
             
             # --- FFN后的残差连接 ---
             e5_gathered = e_chunks[5][batch_indices].squeeze(1).squeeze(1)
@@ -610,12 +624,15 @@ class CausalWanAttentionBlock(nn.Module):
 
         # cross-attention & ffn function
         def cross_attn_ffn(x, context, context_lens, e, crossattn_cache=None):
-            x = x + self.cross_attn(self.norm3(x), context,
-                                    context_lens, crossattn_cache=crossattn_cache)
-            y = self.ffn(
-                (self.norm2(x).unflatten(dim=1, sizes=(num_frames,
-                 frame_seqlen)) * (1 + e[4]) + e[3]).flatten(1, 2)
-            )
+            with PROFILER.record("Cross Attention"):
+                cross_out = self.cross_attn(self.norm3(x), context,
+                                            context_lens, crossattn_cache=crossattn_cache)
+            x = x + cross_out
+            with PROFILER.record("Linear"):
+                y = self.ffn(
+                    (self.norm2(x).unflatten(dim=1, sizes=(num_frames,
+                     frame_seqlen)) * (1 + e[4]) + e[3]).flatten(1, 2)
+                )
             # with amp.autocast(dtype=torch.float32):
             x = x + (y.unflatten(dim=1, sizes=(num_frames,
                      frame_seqlen)) * e[5]).flatten(1, 2)
@@ -1210,14 +1227,15 @@ class CausalWanModel(ModelMixin, ConfigMixin):
         # start=time.time()
 
         # ===================== 4. 光流 Warp 引导 (仅作用于前两个 chunk) =====================
-        if use_sparse and sparse_bs>0:    
+        if use_sparse and sparse_bs>0:
+          with PROFILER.record("Warp"):
             b, s, _, h, w = x.shape
             x = x.squeeze(2)
             flow = latent_flow_data["flow"][:sparse_bs]
             occ_mask = latent_flow_data["mask"][:sparse_bs]
             x_prev = self.flow_guidance_cache[:sparse_bs]
             x_prev_image = x_prev.squeeze(2)
-            
+
             x_warped = universal_flow_warp(x_prev_image.float(), flow.float()).to(dtype=x.dtype)
             occ_mask_expanded = occ_mask.view(sparse_bs, 1, h, w).expand(sparse_bs, s, h, w)
             x_final = torch.where(occ_mask_expanded, x[:sparse_bs], x_warped)
